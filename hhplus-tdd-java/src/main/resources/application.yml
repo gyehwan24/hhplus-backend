@@ -1,0 +1,8 @@
+spring:
+  application.name: hhplus-tdd
+
+logging:
+  level:
+    root: INFO
+    io.hhplus.tdd: DEBUG
+    org.springframework.web: DEBUG
