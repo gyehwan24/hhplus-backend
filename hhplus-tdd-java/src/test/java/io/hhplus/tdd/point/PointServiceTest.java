@@ -25,8 +25,8 @@ class PointServiceTest {
     @Mock
     private PointHistoryTable pointHistoryTable;
     
-    @InjectMocks
-    private PointController pointController;
+    // @InjectMocks
+    // private PointController pointController;
 
     @InjectMocks
     private PointService pointService;
@@ -48,18 +48,21 @@ class PointServiceTest {
         
         UserPoint userPoint = new UserPoint(userId, currentPoint, System.currentTimeMillis());
         UserPoint updatedUserPoint = new UserPoint(userId, expectedPoint, System.currentTimeMillis());
-        
+        PointHistory pointHistory = new PointHistory(updatedUserPoint.id(), userId, chargeAmount, TransactionType.CHARGE, System.currentTimeMillis());
+
         // Mock 설정 
         when(userPointTable.selectById(userId)).thenReturn(userPoint);
-        when(userPointTable.insertOrUpdate(userId, expectedPoint)).thenReturn(updatedUserPoint);  // ⭐ expectedPoint로 수정!
+        when(userPointTable.insertOrUpdate(userId, expectedPoint)).thenReturn(updatedUserPoint); 
+        when(pointHistoryTable.insert(eq(userId), eq(chargeAmount), eq(TransactionType.CHARGE), anyLong())).thenReturn(pointHistory);
 
         // when - 실제 동작
-        UserPoint result = pointService.charge(userPoint, chargeAmount);
+        UserPoint result = pointService.charge(userId, chargeAmount);
 
         // then - 현재 포인트 + 충전 금액 = 결과
         assertThat(result).isNotNull();  // null 체크 추가
         assertThat(result.point()).isEqualTo(expectedPoint);
         verify(userPointTable).insertOrUpdate(anyLong(), anyLong()); // UserPointTable의 insertOrUpdate 메서드가 호출되었는지 검증
+        verify(pointHistoryTable).insert(eq(userId), eq(chargeAmount), eq(TransactionType.CHARGE), anyLong());
     }
 
     @Test
@@ -74,7 +77,7 @@ class PointServiceTest {
 
         // when & then
         assertThrows(IllegalArgumentException.class, () -> {
-            pointService.charge(userPoint, chargeAmount);
+            pointService.charge(userId, chargeAmount);
         });
     }
 
@@ -89,7 +92,7 @@ class PointServiceTest {
         when(userPointTable.selectById(userId)).thenReturn(userPoint);
         // when & then
         assertThrows(IllegalArgumentException.class, () -> {
-            pointService.charge(userPoint, chargeAmount);
+            pointService.charge(userId, chargeAmount);
         });
     }
 

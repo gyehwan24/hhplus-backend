@@ -16,10 +16,12 @@ public class PointService {
         this.userPointTable = userPointTable;
     }
     
-    public UserPoint charge(UserPoint userPoint, long amount) {
+    public UserPoint charge(long userId, long amount) {
         // 현재 포인트 조회
-        UserPoint current = userPointTable.selectById(userPoint.id());
+        UserPoint current = userPointTable.selectById(userId);
         UserPoint chargedUserPoint = current.charge(amount);        
+        
+        pointHistoryTable.insert(userId, amount, TransactionType.CHARGE, System.currentTimeMillis());
         return userPointTable.insertOrUpdate(chargedUserPoint.id(), chargedUserPoint.point());
     }
 }
