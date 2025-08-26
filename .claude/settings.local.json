@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd:*)",
+      "Bash(cd:*)",
+      "Bash(cd:*)",
+      "Bash(cd:*)"
+    ],
+    "additionalDirectories": [
+      "/Users/gyehwan/Desktop/스터디 자료/hhplus-backend"
+    ]
+  }
+}
