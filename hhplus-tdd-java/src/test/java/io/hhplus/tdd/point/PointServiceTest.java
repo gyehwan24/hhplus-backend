@@ -2,6 +2,8 @@ package io.hhplus.tdd.point;
 
 import io.hhplus.tdd.database.PointHistoryTable;
 import io.hhplus.tdd.database.UserPointTable;
+import io.hhplus.tdd.point.lock.LockManager;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -13,10 +15,10 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 import java.util.List;
+import java.util.function.Supplier;
 
 @ExtendWith(MockitoExtension.class)
 class PointServiceTest {
@@ -27,8 +29,27 @@ class PointServiceTest {
     @Mock
     private PointHistoryTable pointHistoryTable;
 
+    @Mock
+    private LockManager lockManager;
+
     @InjectMocks
     private PointService pointService;
+
+    @BeforeEach
+    void setUp() {
+        setupLockManagerMock();
+    }
+
+    // LockManager Mock 설정을 위한 공통 메서드
+    @SuppressWarnings("unchecked")
+    private void setupLockManagerMock() {
+        // 모든 executeWithLock 호출에 대해 람다를 실행하도록 설정
+        when(lockManager.executeWithLock(anyLong(), anyString(), any(Supplier.class)))
+                .thenAnswer(invocation -> {
+                    Supplier<Object> supplier = invocation.getArgument(2);
+                    return supplier.get();
+                });
+    }
 
     /*
      * PATCH /point/{id}/charge : 포인트를 충전한다.
@@ -58,7 +79,7 @@ class PointServiceTest {
             when(userPointTable.insertOrUpdate(userId, expectedPoint)).thenReturn(updatedUserPoint);
             when(pointHistoryTable.insert(eq(userId), eq(chargeAmount), eq(TransactionType.CHARGE), anyLong()))
                     .thenReturn(pointHistory);
-
+            
             // when - 실제 동작
             UserPoint result = pointService.charge(userId, chargeAmount);
 
