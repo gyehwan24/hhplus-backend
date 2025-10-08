@@ -1,0 +1,39 @@
+@startuml 콘서트 대기열 시스템 인프라 구성도
+!theme plain
+
+left to right direction
+
+actor "User\n(웹/모바일)" as user
+
+rectangle "Cloud Instance" as cloud_instance {
+    ' Load Balancer
+    component "Nginx\n(Load Balancer)" as nginx
+    
+    ' Application Server Cluster
+    rectangle "WAS Cluster" as springboot_cluster {
+        component "Spring Boot\n(Docker)" as springboot
+        component "Spring Boot" as more
+    }
+    
+    ' Cache
+    component "Redis\n(Cache)" as redis
+    
+    ' Database with Master/Slave
+    rectangle "MySQL" as mysql_group {
+        component "MySQL\nMaster\n(Write)" as mysql_master
+        component "MySQL\nSlave\n(Read)" as mysql_slave
+    }
+}
+
+' 기본 요청 흐름 
+user --> nginx : "HTTPS Request"
+nginx --> springboot : "Load Balance"
+nginx --> more : "Load Balance"
+
+springboot --> redis : "대기열 등록/확인"
+springboot --> mysql_master : "Write"
+springboot <-- mysql_slave : "Read"
+
+mysql_master --> mysql_slave : "Replication"
+
+@enduml

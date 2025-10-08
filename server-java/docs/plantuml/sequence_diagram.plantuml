@@ -1,0 +1,141 @@
+@startuml 콘서트 대기열 시스템 플로우
+!theme plain
+participant "사용자" as User
+participant "Frontend" as FE
+participant "API Server" as API
+participant "Redis\n(대기열)" as Redis
+participant "MySQL\n(queue_tokens)" as DB
+participant "WebSocket\n(실시간 알림)" as WS
+participant "스케줄러" as Scheduler
+
+== 1. 대기열 진입 ==
+User -> FE: 콘서트 예약 페이지 접속
+FE -> API: POST /api/v1/queue/tokens\n{scheduleId: 1, userId: 100}
+
+note right of API: 중복 진입 체크 필요
+API -> DB: SELECT * FROM queue_tokens\nWHERE user_id=100 AND schedule_id=1\nAND status IN ('WAITING','ACTIVE')
+
+alt 이미 대기열에 있는 경우
+    DB -> API: 기존 토큰 반환
+    API -> FE: {token: "abc123", position: 150}
+else 신규 진입
+    API -> DB: INSERT INTO queue_tokens\n(token="abc123", user_id=100, schedule_id=1,\nstatus='WAITING', entered_at=now())
+    
+    note right of API: Redis ZSet에 토큰 추가\n(score = 현재시간)
+    API -> Redis: ZADD waiting_queue:schedule_1\n1640995200000 "abc123"
+    
+    API -> Redis: ZRANK waiting_queue:schedule_1 "abc123"
+    Redis -> API: position: 149 (0-based)
+    
+    API -> FE: {token: "abc123", position: 150}
+end
+
+FE -> User: "현재 150번째 대기 중"
+
+== 2. 실시간 순번 업데이트 ==
+loop 매 5초마다
+    FE -> API: GET /api/v1/queue/status/{token}
+    API -> Redis: ZRANK waiting_queue:schedule_1 "abc123"
+    Redis -> API: position: 120
+    API -> FE: {position: 121, estimatedWait: "12분"}
+    FE -> User: "현재 121번째, 예상 대기시간 12분"
+end
+
+== 3. 대기열 처리 (스케줄러) ==
+note right of Scheduler: 10초마다 대기열에서\n100명씩 활성화
+Scheduler -> Redis: ZRANGE waiting_queue:schedule_1 0 99
+Redis -> Scheduler: ["abc123", "def456", ...]
+
+loop 각 토큰별로
+    Scheduler -> DB: UPDATE queue_tokens\nSET status='ACTIVE', activated_at=now()\nWHERE token='abc123'
+    
+    Scheduler -> Redis: ZREM waiting_queue:schedule_1 "abc123"
+    Scheduler -> Redis: SADD active_users:schedule_1 "abc123"
+    Scheduler -> Redis: EXPIRE active_users:schedule_1:abc123 300
+    
+    note right of Scheduler: 5분 활성 시간 부여
+    Scheduler -> WS: send({token: "abc123", status: "ACTIVE"})
+end
+
+== 4. 활성 상태 알림 ==
+WS -> FE: {status: "ACTIVE", message: "예약 가능!"}
+FE -> User: "예약 가능! ~분 내 예약해주세요"
+
+== 5. 좌석 선택 및 예약 ==
+User -> FE: 좌석 A1, A2 선택
+FE -> API: POST /api/v1/reservations\n{scheduleId: 1, seatIds: [1,2], userId: 100}
+
+API -> DB: SELECT * FROM queue_tokens\nWHERE token='abc123' AND status='ACTIVE'
+DB -> API: 유효한 토큰 확인
+
+API -> Redis: SISMEMBER active_users:schedule_1 "abc123"
+Redis -> API: 1 (활성 상태 확인)
+
+note right of API: 좌석 상태 확인 및 임시 예약
+API -> DB: SELECT * FROM schedule_seats\nWHERE id IN (1,2) AND status='AVAILABLE'\nFOR UPDATE
+
+alt 좌석 예약 가능
+    API -> DB: BEGIN TRANSACTION
+    
+    API -> DB: UPDATE schedule_seats\nSET status='RESERVED', reserved_until=now()+10분\nWHERE id IN (1,2)
+    
+    API -> DB: INSERT INTO reservations\n(user_id=100, schedule_id=1, queue_token_id=토큰ID,\nreservation_number='RES-001', total_amount=100000,\nstatus='PENDING', expires_at=now()+10분)
+    
+    API -> DB: INSERT INTO reservation_details\n(reservation_id, schedule_seat_id, price, status='ACTIVE')
+    
+    API -> DB: COMMIT
+    
+    API -> FE: {reservationId: 1, reservationNumber: "RES-001",\ntotalAmount: 100000, expiresAt: "10분 후"}
+else 좌석 이미 예약됨
+    API -> FE: {error: "선택한 좌석이 이미 예약되었습니다"}
+end
+
+FE -> User: "예약 완료! 5분 내 결제해주세요"
+
+== 6. 결제 진행 ==
+User -> FE: 결제 버튼 클릭
+FE -> API: POST /api/v1/payments\n{reservationId: 1, paymentMethod: "BALANCE", userId: 100}
+
+API -> DB: SELECT * FROM reservations\nWHERE id=1 AND status='PENDING'\nAND expires_at > now()
+
+API -> DB: SELECT * FROM user_balances\nWHERE user_id=100 FOR UPDATE
+
+note right of API: 잔액 확인 및 차감
+API -> DB: UPDATE user_balances\nSET current_balance = current_balance - 100000,\ntotal_used = total_used + 100000,\nversion = version + 1\nWHERE user_id=100 AND version=현재버전
+
+alt 잔액 충분 & 결제 성공
+    API -> DB: INSERT INTO balance_transactions\n(user_id=100, transaction_type='USE',\namount=100000, reference_type='RESERVATION',\nreference_id=1, description='콘서트 예약 결제')
+    
+    API -> DB: UPDATE reservations\nSET status='CONFIRMED'\nWHERE id=1
+    
+    API -> DB: UPDATE schedule_seats\nSET status='SOLD', reserved_until=NULL\nWHERE id IN (1,2)
+    
+    API -> DB: INSERT INTO payments\n(reservation_id=1, amount=100000,\nstatus='COMPLETED', payment_source='BALANCE')
+    
+    note right of API: 토큰 사용 완료 처리
+    API -> DB: UPDATE queue_tokens\nSET status='USED'\nWHERE token='abc123'
+    
+    API -> Redis: SREM active_users:schedule_1 "abc123"
+    
+    API -> FE: {status: "SUCCESS", message: "결제 완료!"}
+else 잔액 부족
+    API -> FE: {error: "잔액이 부족합니다"}
+end
+
+FE -> User: "예약 및 결제 완료"
+
+== 7. 만료 처리 (스케줄러) ==
+note right of Scheduler: 1분마다 만료된 예약/토큰 정리
+Scheduler -> DB: SELECT * FROM reservations\nWHERE status='PENDING'\nAND expires_at < now()
+
+loop 만료된 예약들
+    Scheduler -> DB: UPDATE reservations\nSET status='EXPIRED'\nWHERE id=만료된예약ID
+    
+    Scheduler -> DB: UPDATE schedule_seats\nSET status='AVAILABLE', reserved_until=NULL\nWHERE reservation_id=만료된예약ID
+end
+
+Scheduler -> DB: UPDATE queue_tokens\nSET status='EXPIRED'\nWHERE status='ACTIVE'\nAND activated_at < now() - INTERVAL 5 MINUTE
+
+Scheduler -> Redis: 만료된 활성 토큰들 정리
+
+@enduml

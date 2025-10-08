@@ -1,0 +1,220 @@
+@startuml Concert Reservation System ERD
+!define PRIMARY_KEY(x) <b><color:#b8860b><&key></color> x</b>
+!define FOREIGN_KEY(x) <color:#aaaaaa><&key></color> x
+!define COLUMN(x) <color:#efefef><&media-record></color> x
+!define TABLE(x) entity x << (T, #FFAAAA) >>
+
+
+package "User Management" as UserPkg {
+  ' 사용자
+  TABLE(users) {
+    PRIMARY_KEY(id: BIGINT)
+    --
+    COLUMN(email: VARCHAR(255) UNIQUE)
+    COLUMN(name: VARCHAR(100))
+    COLUMN(phone: VARCHAR(20))
+    COLUMN(created_at: TIMESTAMP)
+    COLUMN(updated_at: TIMESTAMP)
+  }
+
+  ' 사용자 잔액
+  TABLE(user_balances) {
+    PRIMARY_KEY(id: BIGINT)
+    FOREIGN_KEY(user_id: BIGINT)
+    --
+    COLUMN(current_balance: DECIMAL(10,2))
+    COLUMN(total_charged: DECIMAL(10,2))
+    COLUMN(total_used: DECIMAL(10,2))
+    COLUMN(version: INTEGER)
+    COLUMN(created_at: TIMESTAMP)
+    COLUMN(updated_at: TIMESTAMP)
+  }
+
+  ' 잔액 거래 이력
+  TABLE(balance_transactions) {
+    PRIMARY_KEY(id: BIGINT)
+    FOREIGN_KEY(user_id: BIGINT)
+    --
+    COLUMN(transaction_type: VARCHAR(20))
+    COLUMN(amount: DECIMAL(10,2))
+    COLUMN(balance_before: DECIMAL(10,2))
+    COLUMN(balance_after: DECIMAL(10,2))
+    COLUMN(description: VARCHAR(255))
+    COLUMN(created_at: TIMESTAMP)
+  }
+}
+
+package "Queue Management" as QueuePkg {
+  ' 대기열 토큰 (핵심 기능)
+  TABLE(queue_tokens) #bedbff {
+    PRIMARY_KEY(id: BIGINT)
+    FOREIGN_KEY(user_id: BIGINT)
+    FOREIGN_KEY(schedule_id: BIGINT)
+    --
+    COLUMN(token: VARCHAR(255) UNIQUE)
+    COLUMN(status: VARCHAR(20))
+    COLUMN(queue_position: BIGINT)
+    COLUMN(entered_at: TIMESTAMP)
+    COLUMN(activated_at: TIMESTAMP)
+    COLUMN(expires_at: TIMESTAMP)
+    COLUMN(created_at: TIMESTAMP)
+  }
+}
+
+note as queueTokenMemo 
+**대기열 토큰 상세 설명**
+**컬럼별 역할:**
+• token: 외부 노출용 UUID (Redis 키로 사용)
+• status: WAITING → ACTIVE → USED/EXPIRED
+• queue_position: 캐시용 (실제는 Redis ZSet)
+• entered_at: 대기열 진입 시간
+• activated_at: 예약 가능 상태 전환 시간
+• expires_at: 토큰 만료 시간
+
+**Redis 연동:**
+• ZSet: waiting_queue:schedule_{id}
+• Set: active_users:schedule_{id}
+• Hash: queue_stats:schedule_{id}
+
+**상태 플로우:**
+WAITING (Redis ZSet) → ACTIVE (Redis Set)\n→ USED (예약 성공) / EXPIRED (시간 초과)
+end note
+queue_tokens .. queueTokenMemo
+
+package "Concert Management" as ConcertPkg {
+  ' 콘서트 (기본 정보)
+  TABLE(concerts) {
+    PRIMARY_KEY(id: BIGINT)
+    --
+    COLUMN(title: VARCHAR(255))
+    COLUMN(artist: VARCHAR(255))
+    COLUMN(description: TEXT)
+    COLUMN(poster_image_url: VARCHAR(500))
+    COLUMN(duration_minutes: INTEGER)
+    COLUMN(created_at: TIMESTAMP)
+    COLUMN(updated_at: TIMESTAMP)
+  }
+
+  ' 공연장
+  TABLE(venues) {
+    PRIMARY_KEY(id: BIGINT)
+    --
+    COLUMN(name: VARCHAR(255))
+    COLUMN(address: VARCHAR(500))
+    COLUMN(total_seats: INTEGER)
+    COLUMN(created_at: TIMESTAMP)
+  }
+
+  ' 콘서트 일정
+  TABLE(concert_schedules) {
+    PRIMARY_KEY(id: BIGINT)
+    FOREIGN_KEY(concert_id: BIGINT)
+    FOREIGN_KEY(venue_id: BIGINT)
+    --
+    COLUMN(performance_date: DATE)
+    COLUMN(performance_time: TIME)
+    COLUMN(booking_open_at: TIMESTAMP)
+    COLUMN(booking_close_at: TIMESTAMP)
+    COLUMN(max_seats_per_user: INTEGER)
+    COLUMN(status: VARCHAR(20))
+    COLUMN(created_at: TIMESTAMP)
+  }
+
+  ' 물리적 좌석
+  TABLE(venue_seats) {
+    PRIMARY_KEY(id: BIGINT)
+    FOREIGN_KEY(venue_id: BIGINT)
+    --
+    COLUMN(seat_number: INTEGER)
+  }
+
+  ' 일정별 좌석 (예약 가능한 좌석)
+  TABLE(schedule_seats) {
+    PRIMARY_KEY(id: BIGINT)
+    FOREIGN_KEY(schedule_id: BIGINT)
+    FOREIGN_KEY(venue_seat_id: BIGINT)
+    --
+    COLUMN(price: DECIMAL(10,2))
+    COLUMN(status: VARCHAR(20))
+    COLUMN(reserved_until: TIMESTAMP)
+    COLUMN(version: INTEGER)
+    COLUMN(created_at: TIMESTAMP)
+    COLUMN(updated_at: TIMESTAMP)
+  }
+  note right of schedule_seats::status
+    **좌석 상태:**
+    - AVAILABLE: 예약 가능
+    - RESERVED: 임시 예약 (10분)
+    - SOLD: 결제 완료
+  end note
+}
+
+package "Reservation Management" as ReservationPkg {
+  ' 예약
+  TABLE(reservations) {
+    PRIMARY_KEY(id: BIGINT)
+    FOREIGN_KEY(user_id: BIGINT)
+    FOREIGN_KEY(queue_token_id: BIGINT)
+    --
+    COLUMN(reservation_number: VARCHAR(50) UNIQUE)
+    COLUMN(total_amount: DECIMAL(10,2))
+    COLUMN(original_amount: DECIMAL(10,2))
+    COLUMN(status: VARCHAR(20))
+    COLUMN(reserved_at: TIMESTAMP)
+    COLUMN(expires_at: TIMESTAMP)
+    COLUMN(created_at: TIMESTAMP)
+  }
+
+  ' 예약 상세 (좌석별)
+  TABLE(reservation_details) {
+    PRIMARY_KEY(id: BIGINT)
+    FOREIGN_KEY(reservation_id: BIGINT)
+    FOREIGN_KEY(schedule_seat_id: BIGINT)
+    --
+    COLUMN(price: DECIMAL(10,2))
+    COLUMN(status: VARCHAR(20))
+    COLUMN(cancelled_at: TIMESTAMP)
+    COLUMN(cancel_reason: VARCHAR(255))
+    COLUMN(created_at: TIMESTAMP)
+  }
+
+  ' 결제
+  TABLE(payments) {
+    PRIMARY_KEY(id: BIGINT)
+    FOREIGN_KEY(reservation_id: BIGINT)
+    --
+    COLUMN(payment_method: VARCHAR(20))
+    COLUMN(amount: DECIMAL(10,2))
+    COLUMN(status: VARCHAR(20))
+    COLUMN(payment_source: VARCHAR(20))
+    COLUMN(pg_transaction_id: VARCHAR(100))
+    COLUMN(paid_at: TIMESTAMP)
+    COLUMN(created_at: TIMESTAMP)
+  }
+}
+
+' === 관계 설정 ===
+
+' User 관계
+users ||--o| user_balances : "1:1 사용자별 잔액"
+users ||--o{ balance_transactions : "1:N 거래 이력"
+users ||--o{ queue_tokens : "1:N 대기열 진입"
+users ||-right-o{ reservations : "1:N 예약"
+
+' Concert 관계
+concerts ||--o{ concert_schedules : "1:N 콘서트별 일정"
+venues ||--o{ concert_schedules : "1:N 공연장별 일정"
+venues ||--o{ venue_seats : "1:N 공연장별 좌석"
+
+' Schedule 관계
+concert_schedules ||--o{ schedule_seats : "1:N 일정별 판매 좌석"
+concert_schedules ||--o{ queue_tokens : "1:N 일정별 대기열"
+venue_seats ||--o{ schedule_seats : "1:N 물리좌석-판매좌석"
+
+' Reservation 관계
+reservations ||--o{ reservation_details : "1:N 예약별 좌석"
+reservations ||--o{ payments : "1:N 예약별 결제"
+schedule_seats ||--o{ reservation_details : "1:N 좌석별 예약상세"
+queue_tokens ||--o{ reservations : "1:1 토큰별 예약"
+
+@enduml
