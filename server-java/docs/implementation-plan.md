@@ -21,60 +21,129 @@
 
 ## 🏗️ Phase 1: 레이어드 아키텍처 전체 구현
 
-### 패키지 구조
+### 패키지 구조 (도메인 기준)
 ```
 src/main/java/kr/hhplus/be/server/
-├── common/                    (필요시 추가)
+├── common/                              (필요시 추가)
 │   ├── exception/
 │   │   ├── BusinessException
 │   │   └── ErrorCode (enum)
 │   └── response/
 │       └── ApiResponse<T>
-├── domain/                    (JPA Entity + 비즈니스 로직)
-│   ├── user/
+│
+├── user/                                (User 도메인)
+│   ├── domain/                          (도메인 모델)
 │   │   ├── User
 │   │   ├── UserBalance
 │   │   ├── BalanceTransaction
-│   │   └── repository/       (인터페이스)
+│   │   └── repository/                  (Repository 인터페이스)
 │   │       ├── UserRepository
-│   │       └── UserBalanceRepository
-│   ├── concert/
+│   │       ├── UserBalanceRepository
+│   │       └── BalanceTransactionRepository
+│   ├── application/                     (서비스 레이어)
+│   │   └── UserBalanceService
+│   ├── infrastructure/                  (Infrastructure 구현)
+│   │   └── persistence/
+│   │       ├── UserRepositoryImpl
+│   │       ├── UserBalanceRepositoryImpl
+│   │       ├── BalanceTransactionRepositoryImpl
+│   │       └── UserBalanceJpaRepository  (JPA Repository)
+│   └── presentation/                    (API 레이어)
+│       ├── UserBalanceController
+│       ├── request/
+│       │   └── ChargeBalanceRequest
+│       └── response/
+│           └── UserBalanceResponse
+│
+├── concert/                             (Concert 도메인)
+│   ├── domain/
 │   │   ├── Concert
 │   │   ├── ConcertSchedule
 │   │   ├── ScheduleSeat
+│   │   ├── enums/
+│   │   │   ├── ScheduleStatus
+│   │   │   └── SeatStatus
 │   │   └── repository/
-│   ├── reservation/
+│   │       ├── ConcertRepository
+│   │       ├── ConcertScheduleRepository
+│   │       └── ScheduleSeatRepository
+│   ├── application/
+│   │   └── ConcertService
+│   ├── infrastructure/
+│   │   └── persistence/
+│   │       ├── ConcertRepositoryImpl
+│   │       ├── ConcertScheduleRepositoryImpl
+│   │       ├── ScheduleSeatRepositoryImpl
+│   │       └── ConcertJpaRepository
+│   └── presentation/
+│       ├── ConcertController
+│       ├── request/
+│       └── response/
+│           ├── ConcertScheduleResponse
+│           └── SeatResponse
+│
+├── reservation/                         (Reservation 도메인)
+│   ├── domain/
 │   │   ├── Reservation
 │   │   ├── ReservationDetail
-│   │   ├── Payment
+│   │   ├── enums/
+│   │   │   └── ReservationStatus
 │   │   └── repository/
-│   └── queue/
-│       ├── QueueToken
-│       └── repository/
-├── application/              (Service Layer)
-│   ├── user/
-│   │   └── UserBalanceService
-│   ├── concert/
-│   │   └── ConcertService
-│   ├── reservation/
-│   │   ├── ReservationService
+│   │       ├── ReservationRepository
+│   │       └── ReservationDetailRepository
+│   ├── application/
+│   │   └── ReservationService
+│   ├── infrastructure/
+│   │   └── persistence/
+│   │       ├── ReservationRepositoryImpl
+│   │       ├── ReservationDetailRepositoryImpl
+│   │       └── ReservationJpaRepository
+│   └── presentation/
+│       ├── ReservationController
+│       ├── request/
+│       │   └── CreateReservationRequest
+│       └── response/
+│           └── ReservationResponse
+│
+├── payment/                             (Payment 도메인)
+│   ├── domain/
+│   │   ├── Payment
+│   │   ├── enums/
+│   │   │   └── PaymentStatus
+│   │   └── repository/
+│   │       └── PaymentRepository
+│   ├── application/
 │   │   └── PaymentService
-│   └── queue/
-│       └── QueueService
-├── infrastructure/           (Repository 구현체)
-│   └── persistence/
-│       ├── user/
-│       │   ├── UserRepositoryImpl
-│       │   └── UserBalanceRepositoryImpl
-│       ├── concert/
-│       ├── reservation/
-│       └── queue/
-└── presentation/             (Controller + DTO)
-    └── api/
-        ├── user/
-        ├── concert/
-        ├── reservation/
-        └── queue/
+│   ├── infrastructure/
+│   │   └── persistence/
+│   │       ├── PaymentRepositoryImpl
+│   │       └── PaymentJpaRepository
+│   └── presentation/
+│       ├── PaymentController
+│       ├── request/
+│       │   └── ProcessPaymentRequest
+│       └── response/
+│           └── PaymentResponse
+│
+└── queue/                               (Queue 도메인)
+    ├── domain/
+    │   ├── QueueToken
+    │   ├── enums/
+    │   │   └── QueueStatus
+    │   └── repository/
+    │       └── QueueTokenRepository
+    ├── application/
+    │   └── QueueService
+    ├── infrastructure/
+    │   └── persistence/
+    │       ├── QueueTokenRepositoryImpl
+    │       └── QueueTokenJpaRepository
+    └── presentation/
+        ├── QueueController
+        ├── request/
+        │   └── IssueTokenRequest
+        └── response/
+            └── QueueTokenResponse
 ```
 
 ---
@@ -89,7 +158,7 @@ src/main/java/kr/hhplus/be/server/
 
 **테스트 먼저 (Red)**:
 ```java
-// test/domain/user/UserBalanceTest.java
+// test/user/domain/UserBalanceTest.java
 class UserBalanceTest {
 
     @Test
@@ -175,7 +244,7 @@ class UserBalanceTest {
 
 **구현 (Green)**:
 ```java
-// domain/user/UserBalance.java
+// user/domain/UserBalance.java
 @Entity
 @Table(name = "user_balances")
 @Getter
@@ -276,7 +345,7 @@ public class UserBalance {
 
 **인터페이스 정의**:
 ```java
-// domain/user/repository/UserBalanceRepository.java
+// user/domain/repository/UserBalanceRepository.java
 public interface UserBalanceRepository {
     Optional<UserBalance> findByUserId(Long userId);
     UserBalance save(UserBalance userBalance);
@@ -286,7 +355,7 @@ public interface UserBalanceRepository {
 
 **JPA Repository**:
 ```java
-// infrastructure/persistence/user/UserBalanceJpaRepository.java
+// user/infrastructure/persistence/UserBalanceJpaRepository.java
 public interface UserBalanceJpaRepository extends JpaRepository<UserBalance, Long> {
 
     Optional<UserBalance> findByUserId(Long userId);
@@ -299,7 +368,7 @@ public interface UserBalanceJpaRepository extends JpaRepository<UserBalance, Lon
 
 **구현체**:
 ```java
-// infrastructure/persistence/user/UserBalanceRepositoryImpl.java
+// user/infrastructure/persistence/UserBalanceRepositoryImpl.java
 @Repository
 @RequiredArgsConstructor
 public class UserBalanceRepositoryImpl implements UserBalanceRepository {
@@ -329,7 +398,7 @@ public class UserBalanceRepositoryImpl implements UserBalanceRepository {
 
 **테스트 먼저 (Red)**:
 ```java
-// test/application/user/UserBalanceServiceTest.java
+// test/user/application/UserBalanceServiceTest.java
 @ExtendWith(MockitoExtension.class)
 class UserBalanceServiceTest {
 
@@ -412,7 +481,7 @@ class UserBalanceServiceTest {
 
 **구현 (Green)**:
 ```java
-// application/user/UserBalanceService.java
+// user/application/UserBalanceService.java
 @Service
 @Transactional
 @RequiredArgsConstructor
@@ -457,7 +526,7 @@ public class UserBalanceService {
 
 **테스트 먼저**:
 ```java
-// test/domain/concert/ConcertScheduleTest.java
+// test/concert/domain/ConcertScheduleTest.java
 class ConcertScheduleTest {
 
     @Test
@@ -496,7 +565,7 @@ class ConcertScheduleTest {
 
 **구현**:
 ```java
-// domain/concert/ConcertSchedule.java
+// concert/domain/ConcertSchedule.java
 @Entity
 @Table(name = "concert_schedules")
 @Getter
@@ -594,6 +663,7 @@ class ConcertServiceTest {
 
 **구현**:
 ```java
+// concert/application/ConcertService.java
 @Service
 @Transactional(readOnly = true)
 @RequiredArgsConstructor
@@ -631,6 +701,7 @@ public class ConcertService {
 
 **ScheduleSeat 테스트**:
 ```java
+// test/concert/domain/ScheduleSeatTest.java
 class ScheduleSeatTest {
 
     @Test
@@ -681,6 +752,7 @@ class ScheduleSeatTest {
 
 **Reservation 테스트**:
 ```java
+// test/reservation/domain/ReservationTest.java
 class ReservationTest {
 
     @Test
@@ -734,6 +806,7 @@ class ReservationTest {
 
 **테스트**:
 ```java
+// test/reservation/application/ReservationServiceTest.java
 @ExtendWith(MockitoExtension.class)
 class ReservationServiceTest {
 
@@ -800,6 +873,7 @@ class ReservationServiceTest {
 
 **구현**:
 ```java
+// reservation/application/ReservationService.java
 @Service
 @Transactional
 @RequiredArgsConstructor
@@ -836,6 +910,7 @@ public class ReservationService {
 
 **테스트**:
 ```java
+// test/payment/application/PaymentServiceTest.java
 @ExtendWith(MockitoExtension.class)
 class PaymentServiceTest {
 
@@ -907,6 +982,7 @@ class PaymentServiceTest {
 
 **구현**:
 ```java
+// payment/application/PaymentService.java
 @Service
 @Transactional
 @RequiredArgsConstructor
@@ -972,7 +1048,7 @@ public class Reservation {
 
 **변경 후 (클린 아키텍처) - 순수 도메인**:
 ```java
-// domain/reservation/Reservation.java (JPA 어노테이션 완전 제거)
+// reservation/domain/Reservation.java (JPA 어노테이션 완전 제거)
 public class Reservation {
     private Long id;
     private final Long userId;
@@ -1082,7 +1158,7 @@ class ReservationDomainTest {
 **목표**: ORM 매핑을 Infrastructure 계층으로 격리
 
 ```java
-// infrastructure/persistence/reservation/ReservationJpaEntity.java
+// reservation/infrastructure/persistence/ReservationJpaEntity.java
 @Entity
 @Table(name = "reservations")
 @Getter
@@ -1151,7 +1227,7 @@ class ReservationJpaEntity {  // package-private (외부 노출 금지)
 **목표**: 도메인이 외부 세계와 통신하는 추상 포트 정의
 
 ```java
-// application/reservation/port/out/LoadSeatPort.java
+// reservation/application/port/out/LoadSeatPort.java
 public interface LoadSeatPort {
     List<Seat> loadAvailableSeats(List<Long> seatIds);
 }
