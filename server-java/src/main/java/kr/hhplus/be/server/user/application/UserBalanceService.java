@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.util.Optional;
 
 @Service
 @Transactional(readOnly = true)
@@ -23,8 +24,12 @@ public class UserBalanceService {
      */
     @Transactional
     public UserBalance charge(Long userId, BigDecimal amount) {
-        // TODO: 구현
-        throw new UnsupportedOperationException("아직 구현되지 않았습니다.");
+
+        UserBalance userBalance = userBalanceRepository.findByUserId(userId)
+            .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
+        userBalance.charge(amount);
+
+        return userBalanceRepository.save(userBalance);
     }
 
     /**
@@ -33,8 +38,9 @@ public class UserBalanceService {
      * @return UserBalance
      */
     public UserBalance getBalance(Long userId) {
-        // TODO: 구현
-        throw new UnsupportedOperationException("아직 구현되지 않았습니다.");
+        UserBalance userBalance = userBalanceRepository.findByUserId(userId)
+            .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
+        return userBalance;
     }
 
     // TODO: use() 메서드 추가
