@@ -7,8 +7,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.util.Optional;
-
 @Service
 @Transactional(readOnly = true)
 @RequiredArgsConstructor
@@ -43,5 +41,19 @@ public class UserBalanceService {
         return userBalance;
     }
 
-    // TODO: use() 메서드 추가
+    /**
+     * 포인트 사용
+     * @param userId 사용자 ID
+     * @param amount 사용 금액
+     * @return 사용 후 UserBalance
+     */
+    @Transactional
+    public UserBalance use(Long userId, BigDecimal amount) {
+        
+        UserBalance userBalance = userBalanceRepository.findByUserId(userId)
+            .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
+
+        return userBalance.use(amount);
+
+    }
 }

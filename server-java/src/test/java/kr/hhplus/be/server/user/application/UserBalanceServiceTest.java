@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.mockito.ArgumentMatchers.*;
@@ -58,6 +59,21 @@ class UserBalanceServiceTest {
     }
 
     @Test
+    @DisplayName("포인트 충전 예외 - 사용자없음")
+    void charge_사용자없음_예외() {
+        // given
+        Long userId = 1L;
+        BigDecimal chargeAmount = new BigDecimal("1000");
+
+        when(userBalanceRepository.findByUserId(userId))
+            .thenReturn(Optional.empty());
+
+        // when & then
+        assertThatThrownBy(() -> userBalanceService.charge(userId, chargeAmount))
+            .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     @DisplayName("잔액 조회 성공")
     void getBalance_성공() {
         // given
@@ -76,5 +92,65 @@ class UserBalanceServiceTest {
         verify(userBalanceRepository).findByUserId(userId);
     }
 
-    // TODO: use() 메서드 테스트 추가
+    @Test
+    @DisplayName("잔액 조회 예외 - 사용자없음")
+    void getBalance_사용자없음_예외() {
+        // given
+        Long userId = 1L;
+        when(userBalanceRepository.findByUserId(userId))
+            .thenReturn(Optional.empty());
+
+        // when & then
+        assertThatThrownBy(() -> userBalanceService.getBalance(userId))
+            .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    @DisplayName("포인트 사용 성공")
+    void use_정상금액_성공() {
+        // given
+        Long userId = 1L;
+        BigDecimal initialAmount = new BigDecimal("20000");
+        BigDecimal useAmount = new BigDecimal("10000");
+
+        UserBalance userBalance = UserBalance.create(userId, initialAmount);
+
+        when(userBalanceRepository.findByUserId(userId))
+            .thenReturn(Optional.of(userBalance));
+
+        // when
+        UserBalance result = userBalanceService.use(userId, useAmount);
+
+        // then
+        assertThat(result.getCurrentBalance()).isEqualTo(initialAmount.subtract(useAmount));
+        verify(userBalanceRepository).findByUserId(userId);
+    }
+
+    @Test
+    @DisplayName("포인트 사용 예외 - 사용자 없음")
+    void use_사용자없음_예외() {
+        // given
+        Long userId = 1L;
+        BigDecimal useAmount = new BigDecimal("1000");
+        // when & then
+        assertThatThrownBy(() -> userBalanceService.use(userId, useAmount))
+            .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    @DisplayName("포인트 사용 예외 - 잔액 부족")
+    void use_잔액부족_예외() {
+        // given
+        Long userId = 1L;
+        BigDecimal initialAmount = new BigDecimal("20000");
+        BigDecimal useAmount = new BigDecimal("30000");
+        UserBalance userBalance = UserBalance.create(userId, initialAmount);
+
+        when(userBalanceRepository.findByUserId(userId))
+            .thenReturn(Optional.of(userBalance));
+        
+        // when & then
+        assertThatThrownBy(() -> userBalanceService.use(userId, useAmount))
+            .isInstanceOf(IllegalArgumentException.class);
+    }
 }
