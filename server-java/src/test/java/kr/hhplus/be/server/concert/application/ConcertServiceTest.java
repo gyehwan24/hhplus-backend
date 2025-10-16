@@ -1,5 +1,7 @@
 package kr.hhplus.be.server.concert.application;
 
+import kr.hhplus.be.server.concert.application.response.ConcertScheduleResponse;
+import kr.hhplus.be.server.concert.application.response.SeatResponse;
 import kr.hhplus.be.server.concert.domain.ConcertSchedule;
 import kr.hhplus.be.server.concert.domain.ScheduleSeat;
 import kr.hhplus.be.server.concert.domain.enums.ScheduleStatus;
@@ -44,22 +46,19 @@ class ConcertServiceTest {
         LocalDate toDate = fromDate.plusMonths(1);
 
         List<ConcertSchedule> mockSchedules = List.of(
-            createSchedule(1L, fromDate, true),  // 예약 가능
-            createSchedule(2L, fromDate.plusDays(1), false)  // 예약 불가
+            createSchedule(1L, fromDate, true),
+            createSchedule(2L, fromDate.plusDays(1), false)
         );
 
         when(scheduleRepository.findByConcertIdAndDateRange(concertId, fromDate, toDate))
             .thenReturn(mockSchedules);
 
         // when
-        // TODO: ConcertService의 getAvailableSchedules 메서드를 호출하세요
-        // List<???> result = concertService.getAvailableSchedules(concertId, fromDate, toDate);
+        List<ConcertScheduleResponse> result = concertService.getAvailableSchedules(concertId, fromDate, toDate);
 
         // then
-        // TODO: 예약 가능한 일정만 반환되는지 검증하세요
-        // 힌트: result의 size가 1이어야 하고, scheduleId가 1L이어야 합니다
-        // assertThat(result).hasSize(1);
-        // assertThat(result.get(0).getScheduleId()).isEqualTo(1L);
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).concertId()).isEqualTo(1L);
 
         // Repository 호출 검증
         verify(scheduleRepository).findByConcertIdAndDateRange(concertId, fromDate, toDate);
@@ -83,11 +82,10 @@ class ConcertServiceTest {
             .thenReturn(mockSchedules);
 
         // when
-        // TODO: ConcertService의 getAvailableSchedules 메서드를 호출하세요
+        List<ConcertScheduleResponse> result = concertService.getAvailableSchedules(concertId, fromDate, toDate);
 
         // then
-        // TODO: 빈 리스트가 반환되는지 검증하세요
-        // assertThat(result).isEmpty();
+        assertThat(result).isEmpty();
     }
 
     @Test
@@ -106,13 +104,10 @@ class ConcertServiceTest {
             .thenReturn(mockSeats);
 
         // when
-        // TODO: ConcertService의 getAvailableSeats 메서드를 호출하세요
+        List<SeatResponse> result = concertService.getAvailableSeats(scheduleId);
 
         // then
-        // TODO: AVAILABLE 상태의 좌석만 반환되는지 검증하세요
-        // 힌트: result의 size가 2여야 합니다
-        // assertThat(result).hasSize(2);
-
+        assertThat(result).hasSize(2);
         verify(seatRepository).findByScheduleId(scheduleId);
     }
 
@@ -131,11 +126,10 @@ class ConcertServiceTest {
             .thenReturn(mockSeats);
 
         // when
-        // TODO: ConcertService의 getAvailableSeats 메서드를 호출하세요
+        List<SeatResponse> result = concertService.getAvailableSeats(scheduleId);
 
         // then
-        // TODO: 빈 리스트가 반환되는지 검증하세요
-        // assertThat(result).isEmpty();
+        assertThat(result).isEmpty();
     }
 
     // === 테스트 헬퍼 메서드 ===

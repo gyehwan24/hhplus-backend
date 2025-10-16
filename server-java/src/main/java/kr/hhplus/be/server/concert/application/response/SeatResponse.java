@@ -8,29 +8,26 @@ import java.math.BigDecimal;
 /**
  * 좌석 응답 DTO
  */
-public class SeatResponse {
-
-    private Long seatId;
-    private Long scheduleId;
-    private Long venueSeatId;
-    private BigDecimal price;
-    private SeatStatus status;
-
-    // TODO: 생성자를 작성하세요
-    // private SeatResponse(...) { ... }
-
-    // TODO: Getter 메서드들을 작성하세요
-    // public Long getSeatId() { return seatId; }
-    // ...
-
+public record SeatResponse(
+    Long seatId,
+    Long scheduleId,
+    Long venueSeatId,
+    BigDecimal price,
+    SeatStatus status
+) {
     /**
      * 도메인 객체를 DTO로 변환
      *
-     * TODO: 이 메서드를 구현하세요
-     * 힌트: ScheduleSeat 객체의 필드들을 읽어서 SeatResponse 객체를 생성합니다
+     * @param seat 좌석 도메인 객체
+     * @return 좌석 응답 DTO
      */
     public static SeatResponse from(ScheduleSeat seat) {
-        // TODO: 구현하세요
-        return null;
+        return new SeatResponse(
+            seat.getId(),
+            seat.getScheduleId(),
+            seat.getVenueSeatId(),
+            seat.getPrice(),
+            seat.getStatus()
+        );
     }
 }
