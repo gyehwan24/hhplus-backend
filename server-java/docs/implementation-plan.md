@@ -522,9 +522,104 @@ public class UserBalanceService {
 
 ### Step 2: Concert 도메인 - 콘서트 조회 기능 (TDD)
 
-#### 2.1 도메인 엔티티 테스트 & 구현
+> **구현 범위**: Concert, ConcertSchedule, ScheduleSeat 엔티티 + 조회 기능
+>
+> **ERD 참고**:
+> - `concerts` (콘서트 기본 정보)
+> - `concert_schedules` (콘서트 일정, FK: concert_id, venue_id)
+> - `schedule_seats` (일정별 좌석, FK: schedule_id, venue_seat_id)
+> - `venues`, `venue_seats`는 이번 단계에서 **미구현** (FK 참조만 사용)
 
-**테스트 먼저**:
+#### 2.1 Enum 클래스 구현
+
+**먼저 Enum 타입 정의**:
+```java
+// concert/domain/enums/ScheduleStatus.java
+public enum ScheduleStatus {
+    AVAILABLE,      // 예약 가능
+    SOLD_OUT,       // 매진
+    CANCELLED       // 취소됨
+}
+
+// concert/domain/enums/SeatStatus.java
+public enum SeatStatus {
+    AVAILABLE,      // 예약 가능
+    RESERVED,       // 임시 예약 (10분)
+    SOLD            // 결제 완료
+}
+```
+
+---
+
+#### 2.2 도메인 엔티티 테스트 & 구현
+
+##### 2.2.1 Concert 엔티티
+
+**테스트**:
+```java
+// test/concert/domain/ConcertTest.java
+class ConcertTest {
+
+    @Test
+    @DisplayName("콘서트 생성 성공")
+    void create_성공() {
+        // given & when
+        Concert concert = Concert.builder()
+            .title("아이유 콘서트")
+            .artist("아이유")
+            .durationMinutes(120)
+            .build();
+
+        // then
+        assertThat(concert.getTitle()).isEqualTo("아이유 콘서트");
+        assertThat(concert.getArtist()).isEqualTo("아이유");
+        assertThat(concert.getDurationMinutes()).isEqualTo(120);
+    }
+}
+```
+
+**구현**:
+```java
+// concert/domain/Concert.java
+@Entity
+@Table(name = "concerts")
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+public class Concert {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    private String title;
+    private String artist;
+    private String description;
+    private String posterImageUrl;
+    private Integer durationMinutes;
+
+    @CreatedDate
+    private LocalDateTime createdAt;
+
+    @LastModifiedDate
+    private LocalDateTime updatedAt;
+
+    @Builder
+    public Concert(String title, String artist, String description,
+                   String posterImageUrl, Integer durationMinutes) {
+        this.title = title;
+        this.artist = artist;
+        this.description = description;
+        this.posterImageUrl = posterImageUrl;
+        this.durationMinutes = durationMinutes;
+    }
+}
+```
+
+---
+
+##### 2.2.2 ConcertSchedule 엔티티
+
+**테스트**:
 ```java
 // test/concert/domain/ConcertScheduleTest.java
 class ConcertScheduleTest {
@@ -560,6 +655,22 @@ class ConcertScheduleTest {
         // then
         assertThat(result).isFalse();
     }
+
+    @Test
+    @DisplayName("예약 마감 후")
+    void isBookingOpen_마감후_false() {
+        // given
+        ConcertSchedule schedule = ConcertSchedule.builder()
+            .bookingOpenAt(LocalDateTime.now().minusDays(2))
+            .bookingCloseAt(LocalDateTime.now().minusHours(1))
+            .build();
+
+        // when
+        boolean result = schedule.isBookingOpen();
+
+        // then
+        assertThat(result).isFalse();
+    }
 }
 ```
 
@@ -585,31 +696,261 @@ public class ConcertSchedule {
     private LocalDateTime bookingOpenAt;
     private LocalDateTime bookingCloseAt;
 
+    private Integer maxSeatsPerUser;
+
     @Enumerated(EnumType.STRING)
     private ScheduleStatus status;
 
-    // 비즈니스 로직
+    @CreatedDate
+    private LocalDateTime createdAt;
+
+    // 비즈니스 로직: 예약 가능 기간 체크
     public boolean isBookingOpen() {
         LocalDateTime now = LocalDateTime.now();
-        return now.isAfter(bookingOpenAt) && now.isBefore(bookingCloseAt);
+        return now.isAfter(bookingOpenAt) && now.isBefore(bookingCloseAt)
+               && status == ScheduleStatus.AVAILABLE;
     }
 
     @Builder
     public ConcertSchedule(Long concertId, Long venueId,
                           LocalDate performanceDate, LocalTime performanceTime,
-                          LocalDateTime bookingOpenAt, LocalDateTime bookingCloseAt) {
+                          LocalDateTime bookingOpenAt, LocalDateTime bookingCloseAt,
+                          Integer maxSeatsPerUser) {
         this.concertId = concertId;
         this.venueId = venueId;
         this.performanceDate = performanceDate;
         this.performanceTime = performanceTime;
         this.bookingOpenAt = bookingOpenAt;
         this.bookingCloseAt = bookingCloseAt;
+        this.maxSeatsPerUser = maxSeatsPerUser != null ? maxSeatsPerUser : 4;
         this.status = ScheduleStatus.AVAILABLE;
     }
 }
 ```
 
-#### 2.2 Service 레이어 테스트 & 구현
+---
+
+##### 2.2.3 ScheduleSeat 엔티티 (간단 버전)
+
+**테스트**:
+```java
+// test/concert/domain/ScheduleSeatTest.java
+class ScheduleSeatTest {
+
+    @Test
+    @DisplayName("좌석 생성 시 기본 상태는 AVAILABLE")
+    void create_기본상태_AVAILABLE() {
+        // given & when
+        ScheduleSeat seat = ScheduleSeat.builder()
+            .scheduleId(1L)
+            .venueSeatId(1L)
+            .price(new BigDecimal("50000"))
+            .build();
+
+        // then
+        assertThat(seat.getStatus()).isEqualTo(SeatStatus.AVAILABLE);
+    }
+
+    @Test
+    @DisplayName("좌석 예약 가능 여부 체크")
+    void isAvailable_성공() {
+        // given
+        ScheduleSeat seat = ScheduleSeat.builder()
+            .scheduleId(1L)
+            .venueSeatId(1L)
+            .price(new BigDecimal("50000"))
+            .build();
+
+        // when
+        boolean result = seat.isAvailable();
+
+        // then
+        assertThat(result).isTrue();
+    }
+}
+```
+
+**구현**:
+```java
+// concert/domain/ScheduleSeat.java
+@Entity
+@Table(name = "schedule_seats")
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+public class ScheduleSeat {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    private Long scheduleId;
+    private Long venueSeatId;
+
+    private BigDecimal price;
+
+    @Enumerated(EnumType.STRING)
+    private SeatStatus status;
+
+    private LocalDateTime reservedUntil;
+
+    @Version
+    private Integer version;  // Optimistic Lock
+
+    @CreatedDate
+    private LocalDateTime createdAt;
+
+    @LastModifiedDate
+    private LocalDateTime updatedAt;
+
+    // 비즈니스 로직: 예약 가능 여부
+    public boolean isAvailable() {
+        return status == SeatStatus.AVAILABLE;
+    }
+
+    @Builder
+    public ScheduleSeat(Long scheduleId, Long venueSeatId, BigDecimal price) {
+        this.scheduleId = scheduleId;
+        this.venueSeatId = venueSeatId;
+        this.price = price;
+        this.status = SeatStatus.AVAILABLE;
+    }
+}
+```
+
+---
+
+#### 2.3 Repository 인터페이스 & 구현체
+
+**인터페이스 정의**:
+```java
+// concert/domain/repository/ConcertRepository.java
+public interface ConcertRepository {
+    Optional<Concert> findById(Long id);
+    List<Concert> findAll();
+}
+
+// concert/domain/repository/ConcertScheduleRepository.java
+public interface ConcertScheduleRepository {
+    Optional<ConcertSchedule> findById(Long id);
+    List<ConcertSchedule> findByConcertId(Long concertId);
+    List<ConcertSchedule> findByConcertIdAndDateRange(
+        Long concertId, LocalDate fromDate, LocalDate toDate
+    );
+}
+
+// concert/domain/repository/ScheduleSeatRepository.java
+public interface ScheduleSeatRepository {
+    List<ScheduleSeat> findByScheduleId(Long scheduleId);
+    Optional<ScheduleSeat> findById(Long id);
+    List<ScheduleSeat> findAllByIdWithLock(List<Long> ids);
+}
+```
+
+**JPA Repository**:
+```java
+// concert/infrastructure/persistence/ConcertJpaRepository.java
+public interface ConcertJpaRepository extends JpaRepository<Concert, Long> {
+}
+
+// concert/infrastructure/persistence/ConcertScheduleJpaRepository.java
+public interface ConcertScheduleJpaRepository extends JpaRepository<ConcertSchedule, Long> {
+
+    List<ConcertSchedule> findByConcertId(Long concertId);
+
+    @Query("SELECT cs FROM ConcertSchedule cs " +
+           "WHERE cs.concertId = :concertId " +
+           "AND cs.performanceDate BETWEEN :fromDate AND :toDate " +
+           "ORDER BY cs.performanceDate, cs.performanceTime")
+    List<ConcertSchedule> findByConcertIdAndDateRange(
+        @Param("concertId") Long concertId,
+        @Param("fromDate") LocalDate fromDate,
+        @Param("toDate") LocalDate toDate
+    );
+}
+
+// concert/infrastructure/persistence/ScheduleSeatJpaRepository.java
+public interface ScheduleSeatJpaRepository extends JpaRepository<ScheduleSeat, Long> {
+
+    List<ScheduleSeat> findByScheduleId(Long scheduleId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT ss FROM ScheduleSeat ss WHERE ss.id IN :ids")
+    List<ScheduleSeat> findAllByIdWithLock(@Param("ids") List<Long> ids);
+}
+```
+
+**구현체**:
+```java
+// concert/infrastructure/persistence/ConcertRepositoryImpl.java
+@Repository
+@RequiredArgsConstructor
+public class ConcertRepositoryImpl implements ConcertRepository {
+
+    private final ConcertJpaRepository jpaRepository;
+
+    @Override
+    public Optional<Concert> findById(Long id) {
+        return jpaRepository.findById(id);
+    }
+
+    @Override
+    public List<Concert> findAll() {
+        return jpaRepository.findAll();
+    }
+}
+
+// concert/infrastructure/persistence/ConcertScheduleRepositoryImpl.java
+@Repository
+@RequiredArgsConstructor
+public class ConcertScheduleRepositoryImpl implements ConcertScheduleRepository {
+
+    private final ConcertScheduleJpaRepository jpaRepository;
+
+    @Override
+    public Optional<ConcertSchedule> findById(Long id) {
+        return jpaRepository.findById(id);
+    }
+
+    @Override
+    public List<ConcertSchedule> findByConcertId(Long concertId) {
+        return jpaRepository.findByConcertId(concertId);
+    }
+
+    @Override
+    public List<ConcertSchedule> findByConcertIdAndDateRange(
+        Long concertId, LocalDate fromDate, LocalDate toDate
+    ) {
+        return jpaRepository.findByConcertIdAndDateRange(concertId, fromDate, toDate);
+    }
+}
+
+// concert/infrastructure/persistence/ScheduleSeatRepositoryImpl.java
+@Repository
+@RequiredArgsConstructor
+public class ScheduleSeatRepositoryImpl implements ScheduleSeatRepository {
+
+    private final ScheduleSeatJpaRepository jpaRepository;
+
+    @Override
+    public List<ScheduleSeat> findByScheduleId(Long scheduleId) {
+        return jpaRepository.findByScheduleId(scheduleId);
+    }
+
+    @Override
+    public Optional<ScheduleSeat> findById(Long id) {
+        return jpaRepository.findById(id);
+    }
+
+    @Override
+    public List<ScheduleSeat> findAllByIdWithLock(List<Long> ids) {
+        return jpaRepository.findAllByIdWithLock(ids);
+    }
+}
+```
+
+---
+
+#### 2.4 Service 레이어 테스트 & 구현
 
 **테스트 먼저**:
 ```java
