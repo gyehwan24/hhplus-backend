@@ -25,7 +25,17 @@ public class ScheduleSeatRepositoryImpl implements ScheduleSeatRepository {
     }
 
     @Override
+    public List<ScheduleSeat> findAllById(List<Long> ids) {
+        return jpaRepository.findAllById(ids);
+    }
+
+    @Override
     public List<ScheduleSeat> findAllByIdWithLock(List<Long> ids) {
         return jpaRepository.findAllByIdWithLock(ids);
+    }
+
+    @Override
+    public List<ScheduleSeat> saveAll(List<ScheduleSeat> seats) {
+        return jpaRepository.saveAll(seats);
     }
 }

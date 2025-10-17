@@ -24,7 +24,7 @@ public class ReservationDetailRepositoryImpl implements ReservationDetailReposit
     }
 
     @Override
-    public List<ReservationDetail> findByReservationId(Long reservationId) {
+    public List<ReservationDetail> findAllByReservationId(Long reservationId) {
         return jpaRepository.findByReservationId(reservationId);
     }
 }

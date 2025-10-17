@@ -10,5 +10,5 @@ public interface ReservationDetailRepository {
 
     List<ReservationDetail> saveAll(List<ReservationDetail> details);
 
-    List<ReservationDetail> findByReservationId(Long reservationId);
+    List<ReservationDetail> findAllByReservationId(Long reservationId);
 }
