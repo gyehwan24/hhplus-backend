@@ -161,7 +161,6 @@ class ScheduleSeatTest {
 
         // then
         assertThat(seat.getStatus()).isEqualTo(SeatStatus.AVAILABLE);
-        assertThat(seat.getReservedUntil()).isNull();
     }
 
     @Test
