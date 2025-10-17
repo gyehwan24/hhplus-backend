@@ -3,7 +3,7 @@ package kr.hhplus.be.server.payment.application;
 import kr.hhplus.be.server.concert.domain.ScheduleSeat;
 import kr.hhplus.be.server.concert.domain.enums.SeatStatus;
 import kr.hhplus.be.server.concert.domain.repository.ScheduleSeatRepository;
-import kr.hhplus.be.server.payment.domain.Payment;
+import kr.hhplus.be.server.payment.domain.model.Payment;
 import kr.hhplus.be.server.payment.domain.enums.PaymentStatus;
 import kr.hhplus.be.server.payment.domain.repository.PaymentRepository;
 import kr.hhplus.be.server.reservation.domain.Reservation;
@@ -21,7 +21,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 

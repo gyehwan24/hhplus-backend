@@ -1,15 +1,15 @@
 package kr.hhplus.be.server.payment.domain;
 
 import kr.hhplus.be.server.payment.domain.enums.PaymentStatus;
+import kr.hhplus.be.server.payment.domain.model.Payment;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
 
 import static org.assertj.core.api.Assertions.*;
 
-@DisplayName("Payment 도메인 테스트")
+@DisplayName("Payment 도메인 테스트 (순수 도메인 로직)")
 class PaymentTest {
 
     @Test
@@ -94,10 +94,13 @@ class PaymentTest {
         Payment payment = Payment.complete(1L, 1L, new BigDecimal("50000"));
 
         // when
-        payment.cancel();
+        Payment cancelled = payment.cancel();
 
         // then
-        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.CANCELLED);
+        assertThat(cancelled.getStatus()).isEqualTo(PaymentStatus.CANCELLED);
+        assertThat(cancelled.getReservationId()).isEqualTo(payment.getReservationId());
+        assertThat(cancelled.getUserId()).isEqualTo(payment.getUserId());
+        assertThat(cancelled.getAmount()).isEqualTo(payment.getAmount());
     }
 
     @Test
