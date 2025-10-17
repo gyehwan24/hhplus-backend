@@ -43,9 +43,30 @@ public class ScheduleSeat {
     @LastModifiedDate
     private LocalDateTime updatedAt;
 
-    // 비즈니스 로직
     public boolean isAvailable() {
         return this.status == SeatStatus.AVAILABLE;
+    }
+
+    public void reserve() {
+        if (this.status != SeatStatus.AVAILABLE) {
+            throw new IllegalStateException("예약 가능 상태가 아닙니다.");
+        }
+        this.status = SeatStatus.RESERVED;
+        this.reservedUntil = LocalDateTime.now().plusMinutes(10);
+    }
+
+    public void confirm() {
+        if (this.status != SeatStatus.RESERVED) {
+            throw new IllegalStateException("확정 가능 상태가 아닙니다.");
+        }
+        this.status = SeatStatus.SOLD;
+    }
+
+    public void release() {
+        if (this.status != SeatStatus.RESERVED) {
+            throw new IllegalStateException("예약 해제 가능 상태가 아닙니다.");
+        }
+        this.status = SeatStatus.AVAILABLE;
     }
 
     @Builder
