@@ -6,8 +6,8 @@ import kr.hhplus.be.server.concert.domain.repository.ScheduleSeatRepository;
 import kr.hhplus.be.server.payment.domain.model.Payment;
 import kr.hhplus.be.server.payment.domain.enums.PaymentStatus;
 import kr.hhplus.be.server.payment.domain.repository.PaymentRepository;
-import kr.hhplus.be.server.reservation.domain.Reservation;
-import kr.hhplus.be.server.reservation.domain.ReservationDetail;
+import kr.hhplus.be.server.reservation.domain.model.Reservation;
+import kr.hhplus.be.server.reservation.domain.model.ReservationDetail;
 import kr.hhplus.be.server.reservation.domain.enums.ReservationStatus;
 import kr.hhplus.be.server.reservation.domain.repository.ReservationDetailRepository;
 import kr.hhplus.be.server.reservation.domain.repository.ReservationRepository;
@@ -94,18 +94,18 @@ class PaymentServiceTest {
         // 잔액 차감 검증 (도메인 로직)
         assertThat(userBalance.getCurrentBalance()).isEqualTo(new BigDecimal("50000"));
 
-        // 예약 확정 검증 (도메인 로직)
-        assertThat(reservation.getStatus()).isEqualTo(ReservationStatus.CONFIRMED);
+        // 예약 확정 검증 - Immutable이므로 원본은 변경되지 않음
+        assertThat(reservation.getStatus()).isEqualTo(ReservationStatus.PENDING);
 
         // 좌석 확정 검증 (도메인 로직)
         assertThat(seats).allMatch(s -> s.getStatus() == SeatStatus.SOLD);
 
-        // 결제 저장 검증 (유일한 명시적 save)
+        // 명시적 save 검증
         verify(paymentRepository).save(any(Payment.class));
+        verify(reservationRepository).save(any(Reservation.class)); // Immutable이므로 명시적 save 필요
 
-        // Dirty Checking으로 자동 저장되므로 명시적 save는 호출되지 않음
+        // Dirty Checking으로 자동 저장
         verify(userBalanceRepository, never()).save(any());
-        verify(reservationRepository, never()).save(any());
         verify(scheduleSeatRepository, never()).saveAll(any());
     }
 
@@ -156,14 +156,15 @@ class PaymentServiceTest {
 
         Reservation reservation = Reservation.create(userId, 1L, new BigDecimal("50000"));
         setReservationId(reservation, reservationId);
-        reservation.confirm(); // 이미 확정
+        Reservation confirmedReservation = reservation.confirm(); // 이미 확정된 예약 생성
+        setReservationId(confirmedReservation, reservationId); // ID 재설정
 
         // 예약 상세 및 좌석 mock 설정 (confirm() 호출 전까지 필요)
         ReservationDetail detail = createReservationDetail(reservationId, 1L, new BigDecimal("50000"));
         ScheduleSeat seat = createReservedSeat(1L, new BigDecimal("50000"));
         UserBalance userBalance = UserBalance.create(userId, new BigDecimal("100000"));
 
-        when(reservationRepository.findById(reservationId)).thenReturn(Optional.of(reservation));
+        when(reservationRepository.findById(reservationId)).thenReturn(Optional.of(confirmedReservation)); // 확정된 예약 반환
         when(reservationDetailRepository.findAllByReservationId(reservationId)).thenReturn(List.of(detail));
         when(scheduleSeatRepository.findAllById(List.of(1L))).thenReturn(List.of(seat));
         when(userBalanceRepository.findByUserIdWithLock(userId)).thenReturn(Optional.of(userBalance));
@@ -244,11 +245,13 @@ class PaymentServiceTest {
     }
 
     private ReservationDetail createReservationDetail(Long reservationId, Long seatId, BigDecimal price) {
-        return ReservationDetail.builder()
-            .reservationId(reservationId)
-            .seatId(seatId)
-            .price(price)
-            .build();
+        ReservationDetail detail = ReservationDetail.create(
+            reservationId,
+            seatId,
+            seatId.intValue(), // seatNumber
+            price
+        );
+        return detail;
     }
 
     private ScheduleSeat createReservedSeat(Long id, BigDecimal price) {

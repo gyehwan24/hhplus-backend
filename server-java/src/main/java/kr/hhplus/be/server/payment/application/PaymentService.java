@@ -4,8 +4,8 @@ import kr.hhplus.be.server.concert.domain.ScheduleSeat;
 import kr.hhplus.be.server.concert.domain.repository.ScheduleSeatRepository;
 import kr.hhplus.be.server.payment.domain.model.Payment;
 import kr.hhplus.be.server.payment.domain.repository.PaymentRepository;
-import kr.hhplus.be.server.reservation.domain.Reservation;
-import kr.hhplus.be.server.reservation.domain.ReservationDetail;
+import kr.hhplus.be.server.reservation.domain.model.Reservation;
+import kr.hhplus.be.server.reservation.domain.model.ReservationDetail;
 import kr.hhplus.be.server.reservation.domain.repository.ReservationDetailRepository;
 import kr.hhplus.be.server.reservation.domain.repository.ReservationRepository;
 import kr.hhplus.be.server.user.domain.UserBalance;
@@ -53,7 +53,8 @@ public class PaymentService {
 
         userBalance.use(reservation.getTotalAmount());
 
-        reservation.confirm();
+        Reservation confirmedReservation = reservation.confirm();
+        reservationRepository.save(confirmedReservation);
 
         seats.forEach(ScheduleSeat::confirm);
 

@@ -1,11 +1,10 @@
 package kr.hhplus.be.server.reservation.infrastructure.persistence;
 
-import kr.hhplus.be.server.reservation.domain.ReservationDetail;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
 
-public interface ReservationDetailJpaRepository extends JpaRepository<ReservationDetail, Long> {
+public interface ReservationDetailJpaRepository extends JpaRepository<ReservationDetailEntity, Long> {
 
-    List<ReservationDetail> findByReservationId(Long reservationId);
+    List<ReservationDetailEntity> findByReservationId(Long reservationId);
 }

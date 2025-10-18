@@ -1,5 +1,6 @@
 package kr.hhplus.be.server.reservation.domain;
 
+import kr.hhplus.be.server.reservation.domain.model.ReservationDetail;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -7,6 +8,7 @@ import java.math.BigDecimal;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+@DisplayName("ReservationDetail 도메인 테스트 (순수 도메인 로직)")
 class ReservationDetailTest {
 
     @Test
