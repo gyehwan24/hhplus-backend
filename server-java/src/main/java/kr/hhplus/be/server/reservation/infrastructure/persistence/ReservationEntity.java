@@ -65,28 +65,19 @@ class ReservationEntity {
 
     /**
      * Entity → Domain 변환
+     * Reconstitute Pattern: 저장된 데이터를 도메인 객체로 재구성
      */
     public Reservation toDomain() {
-        Reservation reservation = Reservation.create(
+        return Reservation.reconstitute(
+            this.id,
             this.userId,
             this.scheduleId,
-            this.totalAmount
+            this.totalAmount,
+            this.status,
+            this.expiresAt,
+            this.createdAt,
+            this.updatedAt
         );
-
-        // 상태별 처리
-        if (this.status == ReservationStatus.CONFIRMED) {
-            reservation = reservation.confirm();
-        } else if (this.status == ReservationStatus.CANCELLED) {
-            reservation = reservation.cancel();
-        } else if (this.status == ReservationStatus.EXPIRED) {
-            reservation = reservation.expire();
-        }
-        // PENDING은 기본 상태이므로 별도 처리 불필요
-
-        // ID 할당
-        reservation.assignId(this.id);
-
-        return reservation;
     }
 
     /**

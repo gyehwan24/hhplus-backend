@@ -21,10 +21,8 @@ public class ReservationRepositoryImpl implements ReservationRepository {
         // JPA로 저장
         ReservationEntity saved = jpaRepository.save(entity);
 
-        // 생성된 ID를 Domain에 할당
-        reservation.assignId(saved.getId());
-
-        return reservation;
+        // 불변성 준수: 새로운 인스턴스 반환 (기존 객체 수정 없음)
+        return saved.toDomain();
     }
 
     @Override

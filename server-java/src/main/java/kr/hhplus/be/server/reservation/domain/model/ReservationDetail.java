@@ -10,7 +10,7 @@ import java.time.LocalDateTime;
  */
 public class ReservationDetail {
 
-    private Long id;
+    private final Long id;
     private final Long reservationId;
     private final Long seatId;
     private final Integer seatNumber;
@@ -45,13 +45,23 @@ public class ReservationDetail {
     }
 
     /**
-     * Infrastructure를 위한 ID 할당
+     * 영속성 계층에서 저장된 데이터를 도메인 객체로 재구성 (Reconstitute Pattern)
+     * - 비즈니스 로직 없이 순수하게 상태만 복원
+     * - Infrastructure 계층 전용 메서드
+     * - 이미 저장된 데이터는 유효하다고 가정하므로 검증 없이 생성
+     *
+     * @param id 저장된 ID
+     * @param reservationId 예약 ID
+     * @param seatId 좌석 ID
+     * @param seatNumber 좌석 번호
+     * @param price 좌석 가격
+     * @param createdAt 생성 시간
+     * @return 재구성된 도메인 객체
      */
-    public void assignId(Long id) {
-        if (this.id != null) {
-            throw new IllegalStateException("ID는 한 번만 할당할 수 있습니다.");
-        }
-        this.id = id;
+    public static ReservationDetail reconstitute(Long id, Long reservationId, Long seatId,
+                                                Integer seatNumber, BigDecimal price,
+                                                LocalDateTime createdAt) {
+        return new ReservationDetail(id, reservationId, seatId, seatNumber, price, createdAt);
     }
 
     /**

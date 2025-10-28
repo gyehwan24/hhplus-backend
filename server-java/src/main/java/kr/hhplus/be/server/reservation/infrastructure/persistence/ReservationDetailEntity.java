@@ -55,18 +55,16 @@ class ReservationDetailEntity {
 
     /**
      * Entity → Domain 변환
+     * Reconstitute Pattern: 저장된 데이터를 도메인 객체로 재구성
      */
     public ReservationDetail toDomain() {
-        ReservationDetail detail = ReservationDetail.create(
+        return ReservationDetail.reconstitute(
+            this.id,
             this.reservationId,
             this.seatId,
             this.seatNumber,
-            this.price
+            this.price,
+            this.createdAt
         );
-
-        // ID 할당
-        detail.assignId(this.id);
-
-        return detail;
     }
 }

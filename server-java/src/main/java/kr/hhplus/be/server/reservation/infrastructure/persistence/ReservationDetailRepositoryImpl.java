@@ -22,10 +22,8 @@ public class ReservationDetailRepositoryImpl implements ReservationDetailReposit
         // JPA로 저장
         ReservationDetailEntity saved = jpaRepository.save(entity);
 
-        // 생성된 ID를 Domain에 할당
-        detail.assignId(saved.getId());
-
-        return detail;
+        // 불변성 준수: 새로운 인스턴스 반환 (기존 객체 수정 없음)
+        return saved.toDomain();
     }
 
     @Override
@@ -38,12 +36,10 @@ public class ReservationDetailRepositoryImpl implements ReservationDetailReposit
         // JPA로 저장
         List<ReservationDetailEntity> saved = jpaRepository.saveAll(entities);
 
-        // 생성된 ID를 각 Domain에 할당
-        for (int i = 0; i < details.size(); i++) {
-            details.get(i).assignId(saved.get(i).getId());
-        }
-
-        return details;
+        // 불변성 준수: 새로운 인스턴스 리스트 반환
+        return saved.stream()
+                .map(ReservationDetailEntity::toDomain)
+                .collect(Collectors.toList());
     }
 
     @Override
