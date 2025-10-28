@@ -39,7 +39,12 @@ public class ReservationService {
             throw new IllegalArgumentException("예약할 좌석이 없습니다.");
         }
 
-        List<ScheduleSeat> findSeats = seatRepository.findAllByIdWithLock(seatIds);
+        // 데드락 방지: ID를 정렬하여 항상 같은 순서로 락 획득
+        List<Long> sortedSeatIds = seatIds.stream()
+            .sorted()
+            .toList();
+
+        List<ScheduleSeat> findSeats = seatRepository.findAllByIdWithLock(sortedSeatIds);
 
         if (findSeats.size() != seatIds.size()) {
             throw new IllegalArgumentException("존재하지 않는 좌석이 포함되어 있습니다.");
