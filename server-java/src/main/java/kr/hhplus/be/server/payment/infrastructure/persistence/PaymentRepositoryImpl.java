@@ -22,12 +22,10 @@ public class PaymentRepositoryImpl implements PaymentRepository {
     @Override
     public Payment save(Payment payment) {
         PaymentEntity entity = PaymentEntity.from(payment);
-
         PaymentEntity saved = jpaRepository.save(entity);
-        
-        payment.assignId(saved.getId());
 
-        return payment;
+        // 불변성 준수: 새로운 인스턴스 반환 (기존 객체 수정 없음)
+        return saved.toDomain();
     }
 
     @Override

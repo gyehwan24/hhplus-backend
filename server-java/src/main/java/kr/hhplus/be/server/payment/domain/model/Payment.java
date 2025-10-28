@@ -13,7 +13,7 @@ import java.time.LocalDateTime;
  */
 public class Payment {
 
-    private Long id;
+    private final Long id;
     private final Long reservationId;
     private final Long userId;
     private final BigDecimal amount;
@@ -95,22 +95,32 @@ public class Payment {
     }
 
     /**
+     * 영속성 계층에서 저장된 데이터를 도메인 객체로 재구성 (Reconstitute Pattern)
+     * - 비즈니스 로직 없이 순수하게 상태만 복원
+     * - Infrastructure 계층 전용 메서드
+     * - 이미 저장된 데이터는 유효하다고 가정하므로 검증 없이 생성
+     *
+     * @param id 저장된 ID
+     * @param reservationId 예약 ID
+     * @param userId 사용자 ID
+     * @param amount 결제 금액
+     * @param status 결제 상태 (모든 상태 허용)
+     * @param paidAt 결제 시간
+     * @param failureReason 실패 사유
+     * @return 재구성된 도메인 객체
+     */
+    public static Payment reconstitute(Long id, Long reservationId, Long userId,
+                                       BigDecimal amount, PaymentStatus status,
+                                       LocalDateTime paidAt, String failureReason) {
+        return new Payment(id, reservationId, userId, amount, status, paidAt, failureReason);
+    }
+
+    /**
      * 결제 완료 여부 확인
      * @return 결제 완료 여부
      */
     public boolean isCompleted() {
         return this.status == PaymentStatus.COMPLETED;
-    }
-
-    /**
-     * ID 할당 (Infrastructure 계층에서만 호출)
-     * @param id 할당할 ID
-     */
-    public void assignId(Long id) {
-        if (this.id != null) {
-            throw new IllegalStateException("ID가 이미 할당되었습니다.");
-        }
-        this.id = id;
     }
 
     /**

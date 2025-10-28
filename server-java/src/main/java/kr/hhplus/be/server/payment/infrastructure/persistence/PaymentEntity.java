@@ -67,36 +67,18 @@ class PaymentEntity {
 
     /**
      * Entity → Domain 변환
+     * Reconstitute Pattern: 저장된 데이터를 도메인 객체로 재구성
      * @return 순수 도메인 객체
      */
     public Payment toDomain() {
-        Payment payment;
-
-        // 상태에 따라 적절한 팩토리 메서드 호출
-        if (this.status == PaymentStatus.FAILED) {
-            payment = Payment.fail(
-                this.reservationId,
-                this.userId,
-                this.amount,
-                this.failureReason
-            );
-        } else {
-            // COMPLETED, PENDING
-            payment = Payment.complete(
-                this.reservationId,
-                this.userId,
-                this.amount
-            );
-        }
-
-        // CANCELLED 상태 처리
-        if (this.status == PaymentStatus.CANCELLED) {
-            payment = payment.cancel();
-        }
-
-        // ID 할당
-        payment.assignId(this.id);
-
-        return payment;
+        return Payment.reconstitute(
+            this.id,
+            this.reservationId,
+            this.userId,
+            this.amount,
+            this.status,
+            this.paidAt,
+            this.failureReason
+        );
     }
 }
