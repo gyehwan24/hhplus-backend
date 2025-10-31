@@ -5,6 +5,7 @@ import kr.hhplus.be.server.concert.domain.repository.ScheduleSeatRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -37,5 +38,10 @@ public class ScheduleSeatRepositoryImpl implements ScheduleSeatRepository {
     @Override
     public List<ScheduleSeat> saveAll(List<ScheduleSeat> seats) {
         return jpaRepository.saveAll(seats);
+    }
+
+    @Override
+    public List<ScheduleSeat> findExpiredReservedSeats() {
+        return jpaRepository.findExpiredReservedSeats(LocalDateTime.now());
     }
 }
