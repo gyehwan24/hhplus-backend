@@ -1,10 +1,13 @@
 package kr.hhplus.be.server.reservation.infrastructure.persistence;
 
+import kr.hhplus.be.server.reservation.domain.enums.ReservationStatus;
 import kr.hhplus.be.server.reservation.domain.model.Reservation;
 import kr.hhplus.be.server.reservation.domain.repository.ReservationRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 @Repository
@@ -37,5 +40,14 @@ public class ReservationRepositoryImpl implements ReservationRepository {
         // Entity → Domain 변환
         return jpaRepository.findByUserId(userId)
                            .map(ReservationEntity::toDomain);
+    }
+
+    @Override
+    public List<Reservation> findExpiredReservations(LocalDateTime now) {
+        // Entity → Domain 변환
+        return jpaRepository.findExpiredReservations(now, ReservationStatus.PENDING)
+                           .stream()
+                           .map(ReservationEntity::toDomain)
+                           .toList();
     }
 }

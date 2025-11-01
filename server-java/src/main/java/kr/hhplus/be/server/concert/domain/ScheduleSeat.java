@@ -67,6 +67,19 @@ public class ScheduleSeat {
             throw new IllegalStateException("예약 해제 가능 상태가 아닙니다.");
         }
         this.status = SeatStatus.AVAILABLE;
+        this.reservedUntil = null;
+    }
+
+    /**
+     * 예약 만료 여부 확인
+     * @return 예약이 만료되었으면 true
+     */
+    public boolean isReservedExpired() {
+        if (this.status != SeatStatus.RESERVED) {
+            return false;
+        }
+        return this.reservedUntil != null &&
+               LocalDateTime.now().isAfter(this.reservedUntil);
     }
 
     @Builder
