@@ -61,10 +61,13 @@ class TokenEntity {
      */
     public static TokenEntity from(Token domain) {
         TokenEntity entity = new TokenEntity();
+        entity.id = domain.getId();
         entity.tokenValue = domain.getTokenValue();
         entity.userId = domain.getUserId();
         entity.status = domain.getStatus();
-        entity.createdAt = domain.getCreatedAt();
+        if (domain.getId() != null) {
+            entity.createdAt = domain.getCreatedAt();
+        }
         entity.activatedAt = domain.getActivatedAt();
         entity.expiresAt = domain.getExpiresAt();
         return entity;
