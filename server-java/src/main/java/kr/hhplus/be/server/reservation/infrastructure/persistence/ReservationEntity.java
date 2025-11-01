@@ -55,11 +55,17 @@ class ReservationEntity {
      */
     public static ReservationEntity from(Reservation domain) {
         ReservationEntity entity = new ReservationEntity();
+        entity.id = domain.getId();
         entity.userId = domain.getUserId();
         entity.scheduleId = domain.getScheduleId();
         entity.totalAmount = domain.getTotalAmount();
         entity.status = domain.getStatus();
         entity.expiresAt = domain.getExpiresAt();
+
+        if (domain.getId() != null && domain.getCreatedAt() != null) {
+            entity.createdAt = domain.getCreatedAt();
+        }
+
         return entity;
     }
 
