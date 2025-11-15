@@ -41,6 +41,11 @@ public class ScheduleSeatRepositoryImpl implements ScheduleSeatRepository {
     }
 
     @Override
+    public List<ScheduleSeat> findAvailableByScheduleIdAndIdWithLock(Long scheduleId, List<Long> ids) {
+        return jpaRepository.findAvailableByScheduleIdAndIdWithLock(scheduleId, ids);
+    }
+
+    @Override
     public List<ScheduleSeat> findExpiredReservedSeats() {
         return jpaRepository.findExpiredReservedSeats(LocalDateTime.now());
     }

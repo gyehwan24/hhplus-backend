@@ -2,18 +2,23 @@ package kr.hhplus.be.server.reservation.application;
 
 import kr.hhplus.be.server.concert.domain.ScheduleSeat;
 import kr.hhplus.be.server.concert.domain.repository.ScheduleSeatRepository;
-import kr.hhplus.be.server.reservation.domain.enums.ReservationStatus;
+import kr.hhplus.be.server.reservation.application.exception.ConcurrentReservationException;
+import kr.hhplus.be.server.reservation.application.exception.SeatNotAvailableException;
 import kr.hhplus.be.server.reservation.domain.model.Reservation;
 import kr.hhplus.be.server.reservation.domain.model.ReservationDetail;
 import kr.hhplus.be.server.reservation.domain.repository.ReservationDetailRepository;
 import kr.hhplus.be.server.reservation.domain.repository.ReservationRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * 예약 서비스
@@ -30,7 +35,6 @@ public class ReservationService {
 
     /**
      * 예약 생성
-     *
      * @param userId 사용자 ID
      * @param scheduleId 콘서트 일정 ID
      * @param seatIds 예약할 좌석 ID 목록
@@ -41,45 +45,62 @@ public class ReservationService {
             throw new IllegalArgumentException("예약할 좌석이 없습니다.");
         }
 
-        // 데드락 방지: ID를 정렬하여 항상 같은 순서로 락 획득
+        // 데드락 방지: ID 정렬
         List<Long> sortedSeatIds = seatIds.stream()
             .sorted()
             .toList();
 
-        List<ScheduleSeat> findSeats = seatRepository.findAllByIdWithLock(sortedSeatIds);
+        try {
+            // 새로운 메서드 사용: 스케줄 ID와 상태 검증 포함
+            List<ScheduleSeat> seats = seatRepository.findAvailableByScheduleIdAndIdWithLock(
+                scheduleId, sortedSeatIds
+            );
 
-        if (findSeats.size() != seatIds.size()) {
-            throw new IllegalArgumentException("존재하지 않는 좌석이 포함되어 있습니다.");
+            if (seats.size() != seatIds.size()) {
+                // 명확한 실패 이유 제공
+                Set<Long> foundIds = seats.stream()
+                    .map(ScheduleSeat::getId)
+                    .collect(Collectors.toSet());
+                Set<Long> notFoundIds = new HashSet<>(seatIds);
+                notFoundIds.removeAll(foundIds);
+
+                throw new SeatNotAvailableException(
+                    String.format("좌석 %s는 예약할 수 없습니다 (이미 예약됨 또는 다른 스케줄)", notFoundIds)
+                );
+            }
+
+            seats.forEach(ScheduleSeat::reserve);
+
+            BigDecimal totalAmount = seats.stream()
+                .map(ScheduleSeat::getPrice)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+            Reservation reservation = Reservation.create(
+                userId, scheduleId, totalAmount
+            );
+
+            Reservation savedReservation = reservationRepository.save(reservation);
+
+            List<ReservationDetail> details = seats.stream()
+                .map(seat -> ReservationDetail.create(
+                    savedReservation.getId(),
+                    seat.getId(),
+                    seat.getVenueSeatId().intValue(),
+                    seat.getPrice()
+                ))
+                .toList();
+            reservationDetailRepository.saveAll(details);
+
+            return savedReservation;
+
+        } catch (PessimisticLockingFailureException e) {
+            throw new ConcurrentReservationException("다른 사용자가 예약 중입니다. 잠시 후 다시 시도해주세요");
         }
-
-        findSeats.forEach(ScheduleSeat::reserve);
-
-        BigDecimal totalAmount = findSeats.stream()
-            .map(ScheduleSeat::getPrice)
-            .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-        Reservation reservation = Reservation.create(
-            userId, scheduleId, totalAmount  
-        );
-
-        Reservation savedReservation = reservationRepository.save(reservation);
-        
-        List<ReservationDetail> details = findSeats.stream()
-            .map(seat -> ReservationDetail.create(
-                savedReservation.getId(),
-                seat.getId(),
-                seat.getVenueSeatId().intValue(),
-                seat.getPrice()
-            ))
-            .toList();
-        reservationDetailRepository.saveAll(details);
-
-        return savedReservation;
     }
 
     /**
      * 만료된 예약을 처리하고 좌석을 해제
-     *
+     * - 만료 시간이 지났지만 아직 PENDING 상태인 예약들을 처리
      * @return 만료 처리된 예약 수
      */
     public int expireReservationsAndReleaseSeats() {

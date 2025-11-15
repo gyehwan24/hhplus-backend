@@ -13,6 +13,15 @@ public interface ScheduleSeatRepository {
     List<ScheduleSeat> saveAll(List<ScheduleSeat> seats);
 
     /**
+     * 예약 가능한 좌석 조회 (비관적 락)
+     * - scheduleId와 일치하고 status가 AVAILABLE인 좌석만 조회
+     * @param scheduleId 스케줄 ID
+     * @param ids 좌석 ID 목록
+     * @return 예약 가능한 좌석 목록
+     */
+    List<ScheduleSeat> findAvailableByScheduleIdAndIdWithLock(Long scheduleId, List<Long> ids);
+
+    /**
      * 만료된 예약 좌석 조회
      * - RESERVED 상태이면서 reservedUntil이 현재 시각보다 이전인 좌석
      * @return 만료된 예약 좌석 목록

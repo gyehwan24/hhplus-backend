@@ -17,14 +17,35 @@ public interface ScheduleSeatJpaRepository extends JpaRepository<ScheduleSeat, L
     List<ScheduleSeat> findByScheduleId(Long scheduleId);
 
     /**
-     * 비관적 락으로 좌석 조회 (동시성 제어)
+     * 비관적 락으로 좌석 조회
      * - 락 타임아웃: 3초 (무한 대기 방지)
-     * - 데드락 발생 시 LockTimeoutException 발생
+     * @param ids 좌석 ID 목록
+     * @return 조회된 좌석 목록
      */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @QueryHints({@QueryHint(name = "jakarta.persistence.lock.timeout", value = "3000")})
     @Query("SELECT ss FROM ScheduleSeat ss WHERE ss.id IN :ids")
     List<ScheduleSeat> findAllByIdWithLock(@Param("ids") List<Long> ids);
+
+    /**
+     * 예약 가능한 좌석 조회 (비관적 락)
+     * - scheduleId와 일치하고 status가 AVAILABLE인 좌석만 조회
+     * - 락 타임아웃: 3초, ID 순 정렬로 데드락 방지
+     * @param scheduleId 스케줄 ID
+     * @param ids 좌석 ID 목록
+     * @return 예약 가능한 좌석 목록
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @QueryHints({@QueryHint(name = "jakarta.persistence.lock.timeout", value = "3000")})
+    @Query("SELECT ss FROM ScheduleSeat ss " +
+           "WHERE ss.scheduleId = :scheduleId " +
+           "AND ss.id IN :ids " +
+           "AND ss.status = 'AVAILABLE' " +
+           "ORDER BY ss.id ASC")
+    List<ScheduleSeat> findAvailableByScheduleIdAndIdWithLock(
+        @Param("scheduleId") Long scheduleId,
+        @Param("ids") List<Long> ids
+    );
 
     /**
      * 만료된 예약 좌석 조회
