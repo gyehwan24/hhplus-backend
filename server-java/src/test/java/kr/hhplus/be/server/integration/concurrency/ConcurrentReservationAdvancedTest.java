@@ -1,4 +1,4 @@
-package kr.hhplus.be.server.integration;
+package kr.hhplus.be.server.integration.concurrency;
 
 import kr.hhplus.be.server.common.BaseIntegrationTest;
 import kr.hhplus.be.server.concert.domain.Concert;

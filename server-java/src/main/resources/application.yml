@@ -20,6 +20,11 @@ spring:
     properties:
       hibernate.timezone.default_storage: NORMALIZE_UTC
       hibernate.jdbc.time_zone: UTC
+  task:
+    scheduling:
+      pool:
+        size: 2
+      thread-name-prefix: scheduler-
 
 ---
 spring.config.activate.on-profile: local, test

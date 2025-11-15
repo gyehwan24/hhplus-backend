@@ -9,6 +9,8 @@ import kr.hhplus.be.server.reservation.domain.model.ReservationDetail;
 import kr.hhplus.be.server.reservation.domain.repository.ReservationDetailRepository;
 import kr.hhplus.be.server.reservation.domain.repository.ReservationRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,6 +26,7 @@ import java.util.stream.Collectors;
  * 예약 서비스
  * 좌석 예약 비즈니스 로직을 처리
  */
+@Slf4j
 @Service
 @Transactional
 @RequiredArgsConstructor
@@ -100,34 +103,44 @@ public class ReservationService {
 
     /**
      * 만료된 예약을 처리하고 좌석을 해제
-     * - 만료 시간이 지났지만 아직 PENDING 상태인 예약들을 처리
+     * - 조건부 UPDATE로 race condition 방지
+     * - 결제와 만료 배치가 동시 실행되어도 안전
      * @return 만료 처리된 예약 수
      */
     public int expireReservationsAndReleaseSeats() {
         LocalDateTime now = LocalDateTime.now();
 
-        // 만료 시간이 지났지만 아직 PENDING 상태인 예약들을 조회
-        List<Reservation> expiredReservations = reservationRepository.findExpiredReservations(now);
+        try {
+            // Step 1: 만료된 예약 조회 (좌석 ID 수집용)
+            List<Reservation> expiredReservations = reservationRepository.findExpiredReservations(now);
 
-        if (expiredReservations.isEmpty()) {
-            return 0;
-        }
+            if (expiredReservations.isEmpty()) {
+                log.debug("만료된 예약이 없습니다.");
+                return 0;
+            }
 
-        for (Reservation reservation : expiredReservations) {
-            // 예약 만료 처리
-            Reservation expiredReservation = reservation.expire();
-            reservationRepository.save(expiredReservation);
-
-            // 해당 예약의 좌석들을 해제
-            List<ReservationDetail> details = reservationDetailRepository.findAllByReservationId(reservation.getId());
-            List<Long> seatIds = details.stream()
-                .map(ReservationDetail::getSeatId)
+            // Step 2: 좌석 ID 수집
+            List<Long> seatIds = expiredReservations.stream()
+                .flatMap(reservation -> {
+                    List<ReservationDetail> details = reservationDetailRepository
+                        .findAllByReservationId(reservation.getId());
+                    return details.stream().map(ReservationDetail::getSeatId);
+                })
                 .toList();
 
-            List<ScheduleSeat> seats = seatRepository.findAllById(seatIds);
-            seats.forEach(ScheduleSeat::release);
-        }
+            // Step 3: 조건부 UPDATE로 예약 만료 (PENDING → CANCELLED)
+            int expiredCount = reservationRepository.expireIfPendingAndExpired(now);
 
-        return expiredReservations.size();
+            // Step 4: 조건부 UPDATE로 좌석 해제 (RESERVED → AVAILABLE)
+            int releasedCount = seatRepository.releaseSeatsIfReserved(seatIds);
+
+            log.info("예약 만료 처리 완료 - 예약: {}건, 좌석: {}건", expiredCount, releasedCount);
+            return expiredCount;
+
+        } catch (OptimisticLockingFailureException e) {
+            // 다른 트랜잭션(결제)이 먼저 처리한 경우
+            log.warn("예약 만료 처리 중 충돌 발생 (다른 트랜잭션이 먼저 처리): {}", e.getMessage());
+            return 0;
+        }
     }
 }

@@ -26,4 +26,13 @@ public interface ReservationRepository {
      * @return 만료 시간이 지났지만 아직 PENDING 상태인 예약 목록
      */
     List<Reservation> findExpiredReservations(LocalDateTime now);
+
+    /**
+     * 조건부 UPDATE: PENDING 상태이면서 만료된 예약을 CANCELLED로 변경
+     * - 결제와 만료 배치의 race condition 방지
+     * - @Version을 통한 optimistic lock 적용
+     * @param now 현재 시간
+     * @return 업데이트된 예약 수
+     */
+    int expireIfPendingAndExpired(LocalDateTime now);
 }

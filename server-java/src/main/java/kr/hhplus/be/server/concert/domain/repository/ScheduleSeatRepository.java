@@ -27,4 +27,13 @@ public interface ScheduleSeatRepository {
      * @return 만료된 예약 좌석 목록
      */
     List<ScheduleSeat> findExpiredReservedSeats();
+
+    /**
+     * 조건부 UPDATE: 특정 좌석들을 RESERVED 상태에서 AVAILABLE로 변경
+     * - WHERE절에 id 목록과 status = RESERVED 조건 포함
+     * - @Version으로 optimistic lock 자동 적용
+     * @param seatIds 해제할 좌석 ID 목록
+     * @return 업데이트된 좌석 수
+     */
+    int releaseSeatsIfReserved(List<Long> seatIds);
 }

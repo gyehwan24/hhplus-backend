@@ -3,6 +3,7 @@ package kr.hhplus.be.server.concert.infrastructure.persistence;
 import kr.hhplus.be.server.concert.domain.ScheduleSeat;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.jpa.repository.QueryHints;
 import org.springframework.data.repository.query.Param;
@@ -53,4 +54,16 @@ public interface ScheduleSeatJpaRepository extends JpaRepository<ScheduleSeat, L
      */
     @Query("SELECT s FROM ScheduleSeat s WHERE s.status = 'RESERVED' AND s.reservedUntil < :now")
     List<ScheduleSeat> findExpiredReservedSeats(@Param("now") LocalDateTime now);
+
+    /**
+     * 조건부 UPDATE: 특정 좌석들을 RESERVED → AVAILABLE로 변경
+     * - WHERE절에 id 목록과 status = RESERVED 조건 포함
+     * - @Version으로 optimistic lock 자동 적용
+     * @param seatIds 해제할 좌석 ID 목록
+     * @return 업데이트된 좌석 수
+     */
+    @Modifying
+    @Query("UPDATE ScheduleSeat s SET s.status = 'AVAILABLE', s.reservedUntil = NULL " +
+           "WHERE s.id IN :seatIds AND s.status = 'RESERVED'")
+    int releaseSeatsIfReserved(@Param("seatIds") List<Long> seatIds);
 }
