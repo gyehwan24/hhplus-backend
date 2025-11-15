@@ -2,6 +2,8 @@ package kr.hhplus.be.server.reservation.domain.repository;
 
 import kr.hhplus.be.server.reservation.domain.model.Reservation;
 
+import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -17,4 +19,11 @@ public interface ReservationRepository {
     Optional<Reservation> findById(Long id);
 
     Optional<Reservation> findByUserId(Long userId);
+
+    /**
+     * 만료된 예약 목록 조회
+     * @param now 현재 시간
+     * @return 만료 시간이 지났지만 아직 PENDING 상태인 예약 목록
+     */
+    List<Reservation> findExpiredReservations(LocalDateTime now);
 }

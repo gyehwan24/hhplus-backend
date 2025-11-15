@@ -2,6 +2,7 @@ package kr.hhplus.be.server.reservation.application;
 
 import kr.hhplus.be.server.concert.domain.ScheduleSeat;
 import kr.hhplus.be.server.concert.domain.repository.ScheduleSeatRepository;
+import kr.hhplus.be.server.reservation.domain.enums.ReservationStatus;
 import kr.hhplus.be.server.reservation.domain.model.Reservation;
 import kr.hhplus.be.server.reservation.domain.model.ReservationDetail;
 import kr.hhplus.be.server.reservation.domain.repository.ReservationDetailRepository;
@@ -11,6 +12,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 
 /**
@@ -72,6 +74,39 @@ public class ReservationService {
             .toList();
         reservationDetailRepository.saveAll(details);
 
-        return savedReservation; 
+        return savedReservation;
+    }
+
+    /**
+     * 만료된 예약을 처리하고 좌석을 해제
+     *
+     * @return 만료 처리된 예약 수
+     */
+    public int expireReservationsAndReleaseSeats() {
+        LocalDateTime now = LocalDateTime.now();
+
+        // 만료 시간이 지났지만 아직 PENDING 상태인 예약들을 조회
+        List<Reservation> expiredReservations = reservationRepository.findExpiredReservations(now);
+
+        if (expiredReservations.isEmpty()) {
+            return 0;
+        }
+
+        for (Reservation reservation : expiredReservations) {
+            // 예약 만료 처리
+            Reservation expiredReservation = reservation.expire();
+            reservationRepository.save(expiredReservation);
+
+            // 해당 예약의 좌석들을 해제
+            List<ReservationDetail> details = reservationDetailRepository.findAllByReservationId(reservation.getId());
+            List<Long> seatIds = details.stream()
+                .map(ReservationDetail::getSeatId)
+                .toList();
+
+            List<ScheduleSeat> seats = seatRepository.findAllById(seatIds);
+            seats.forEach(ScheduleSeat::release);
+        }
+
+        return expiredReservations.size();
     }
 }

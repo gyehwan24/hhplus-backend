@@ -9,6 +9,7 @@ import org.springframework.data.repository.query.Param;
 
 import jakarta.persistence.LockModeType;
 import jakarta.persistence.QueryHint;
+import java.time.LocalDateTime;
 import java.util.List;
 
 public interface ScheduleSeatJpaRepository extends JpaRepository<ScheduleSeat, Long> {
@@ -24,4 +25,11 @@ public interface ScheduleSeatJpaRepository extends JpaRepository<ScheduleSeat, L
     @QueryHints({@QueryHint(name = "jakarta.persistence.lock.timeout", value = "3000")})
     @Query("SELECT ss FROM ScheduleSeat ss WHERE ss.id IN :ids")
     List<ScheduleSeat> findAllByIdWithLock(@Param("ids") List<Long> ids);
+
+    /**
+     * 만료된 예약 좌석 조회
+     * - RESERVED 상태이면서 reservedUntil이 현재 시각보다 이전
+     */
+    @Query("SELECT s FROM ScheduleSeat s WHERE s.status = 'RESERVED' AND s.reservedUntil < :now")
+    List<ScheduleSeat> findExpiredReservedSeats(@Param("now") LocalDateTime now);
 }
