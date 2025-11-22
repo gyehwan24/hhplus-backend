@@ -50,4 +50,9 @@ public class ReservationRepositoryImpl implements ReservationRepository {
                            .map(ReservationEntity::toDomain)
                            .toList();
     }
+
+    @Override
+    public int expireIfPendingAndExpired(LocalDateTime now) {
+        return jpaRepository.expireIfPendingAndExpired(now);
+    }
 }

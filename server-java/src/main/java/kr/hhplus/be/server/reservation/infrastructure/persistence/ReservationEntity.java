@@ -44,6 +44,9 @@ class ReservationEntity {
     @Column(nullable = false)
     private LocalDateTime expiresAt;
 
+    @Version
+    private Integer version;
+
     @CreatedDate
     private LocalDateTime createdAt;
 
