@@ -3,6 +3,7 @@ package kr.hhplus.be.server.concert.application.response;
 import kr.hhplus.be.server.concert.domain.ConcertSchedule;
 import kr.hhplus.be.server.concert.domain.enums.ScheduleStatus;
 
+import java.io.Serializable;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -20,7 +21,7 @@ public record ConcertScheduleResponse(
     LocalDateTime bookingCloseAt,
     Integer maxSeatsPerUser,
     ScheduleStatus status
-) {
+) implements Serializable {
     /**
      * 도메인 객체를 DTO로 변환
      *

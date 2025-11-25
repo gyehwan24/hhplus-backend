@@ -11,6 +11,9 @@ import kr.hhplus.be.server.reservation.domain.repository.ReservationRepository;
 import kr.hhplus.be.server.user.domain.UserBalance;
 import kr.hhplus.be.server.user.domain.repository.UserBalanceRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,22 +23,26 @@ import java.util.List;
  * 결제 서비스
  * 예약에 대한 결제를 처리하고 관련 도메인(잔액, 예약, 좌석)을 업데이트
  */
+@Slf4j
 @Service
 @Transactional(readOnly = true)
 @RequiredArgsConstructor
 public class PaymentService {
+
+    private static final String SEAT_CACHE_NAME = "cache:seat:available";
 
     private final PaymentRepository paymentRepository;
     private final ReservationRepository reservationRepository;
     private final ReservationDetailRepository reservationDetailRepository;
     private final UserBalanceRepository userBalanceRepository;
     private final ScheduleSeatRepository scheduleSeatRepository;
+    private final CacheManager cacheManager;
 
     @Transactional
     public Payment processPayment(Long reservationId, Long userId) {
 
         Reservation reservation = reservationRepository.findById(reservationId)
-            .orElseThrow(() -> new IllegalArgumentException("예약을 찾을 수 없습니다."));
+                .orElseThrow(() -> new IllegalArgumentException("예약을 찾을 수 없습니다."));
 
         if (!reservation.getUserId().equals(userId)) {
             throw new IllegalArgumentException("예약한 사용자가 아닙니다.");
@@ -43,13 +50,13 @@ public class PaymentService {
 
         List<ReservationDetail> reservationDetails = reservationDetailRepository.findAllByReservationId(reservationId);
         List<Long> seatIds = reservationDetails.stream()
-            .map(ReservationDetail::getSeatId)
-            .toList();
+                .map(ReservationDetail::getSeatId)
+                .toList();
 
         List<ScheduleSeat> seats = scheduleSeatRepository.findAllById(seatIds);
 
         UserBalance userBalance = userBalanceRepository.findByUserIdWithLock(userId)
-            .orElseThrow(() -> new IllegalArgumentException("사용자 잔액 정보를 찾을 수 없습니다."));
+                .orElseThrow(() -> new IllegalArgumentException("사용자 잔액 정보를 찾을 수 없습니다."));
 
         userBalance.use(reservation.getTotalAmount());
 
@@ -58,17 +65,33 @@ public class PaymentService {
 
         seats.forEach(ScheduleSeat::confirm);
 
+        // 좌석 캐시 무효화 (결제 완료 시 좌석 상태 변경)
+        evictSeatCache(reservation.getScheduleId());
+
         Payment payment = Payment.complete(reservationId, userId, reservation.getTotalAmount());
         return paymentRepository.save(payment);
     }
 
     public Payment getPayment(Long paymentId) {
         return paymentRepository.findById(paymentId)
-            .orElseThrow(() -> new IllegalArgumentException("결제 정보를 찾을 수 없습니다."));
+                .orElseThrow(() -> new IllegalArgumentException("결제 정보를 찾을 수 없습니다."));
     }
 
     public Payment getPaymentByReservationId(Long reservationId) {
         return paymentRepository.findByReservationId(reservationId)
-            .orElseThrow(() -> new IllegalArgumentException("해당 예약의 결제 정보를 찾을 수 없습니다."));
+                .orElseThrow(() -> new IllegalArgumentException("해당 예약의 결제 정보를 찾을 수 없습니다."));
+    }
+
+    /**
+     * 좌석 캐시 무효화
+     * 
+     * @param scheduleId 스케줄 ID
+     */
+    private void evictSeatCache(Long scheduleId) {
+        Cache cache = cacheManager.getCache(SEAT_CACHE_NAME);
+        if (cache != null) {
+            cache.evict(scheduleId);
+            log.debug("좌석 캐시 무효화 - scheduleId: {}", scheduleId);
+        }
     }
 }

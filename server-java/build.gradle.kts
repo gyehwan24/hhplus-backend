@@ -34,6 +34,12 @@ dependencies {
 	implementation("org.springframework.boot:spring-boot-starter-actuator")
 	implementation("org.springframework.boot:spring-boot-starter-data-jpa")
 	implementation("org.springframework.boot:spring-boot-starter-web")
+	implementation("org.springframework.boot:spring-boot-starter-data-redis")
+	implementation("org.springframework.boot:spring-boot-starter-cache")
+	implementation("org.springframework.boot:spring-boot-starter-aop")
+
+    // Redisson (Distributed Lock)
+	implementation("org.redisson:redisson-spring-boot-starter:3.37.0")
 
     // Lombok
 	compileOnly("org.projectlombok:lombok")
@@ -49,6 +55,7 @@ dependencies {
 	testImplementation("org.springframework.boot:spring-boot-testcontainers")
 	testImplementation("org.testcontainers:junit-jupiter")
 	testImplementation("org.testcontainers:mysql")
+	testImplementation("com.redis:testcontainers-redis:2.2.2")
 	testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 

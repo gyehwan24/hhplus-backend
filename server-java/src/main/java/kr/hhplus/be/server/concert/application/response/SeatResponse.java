@@ -3,6 +3,7 @@ package kr.hhplus.be.server.concert.application.response;
 import kr.hhplus.be.server.concert.domain.ScheduleSeat;
 import kr.hhplus.be.server.concert.domain.enums.SeatStatus;
 
+import java.io.Serializable;
 import java.math.BigDecimal;
 
 /**
@@ -14,7 +15,7 @@ public record SeatResponse(
     Long venueSeatId,
     BigDecimal price,
     SeatStatus status
-) {
+) implements Serializable {
     /**
      * 도메인 객체를 DTO로 변환
      *
