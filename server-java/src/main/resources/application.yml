@@ -25,6 +25,11 @@ spring:
       pool:
         size: 2
       thread-name-prefix: scheduler-
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      timeout: 3000ms
 
 ---
 spring.config.activate.on-profile: local, test
