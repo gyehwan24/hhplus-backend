@@ -1,8 +1,10 @@
 package kr.hhplus.be.server.token.application;
 
+import kr.hhplus.be.server.token.application.response.QueueStatusResponse;
 import kr.hhplus.be.server.token.domain.Token;
 import kr.hhplus.be.server.token.domain.TokenStatus;
 import kr.hhplus.be.server.token.domain.repository.TokenRepository;
+import kr.hhplus.be.server.token.infrastructure.redis.QueueRedisRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -16,12 +18,12 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.*;
 
 /**
- * TokenService 테스트
- * - Mockito를 사용한 서비스 레이어 테스트
- * - Repository 동작은 Mock으로 대체
+ * TokenService 단위 테스트
+ * - Redis 기반 대기열 + RDB 기반 토큰 관리
  */
 @ExtendWith(MockitoExtension.class)
 class TokenServiceTest {
@@ -29,47 +31,37 @@ class TokenServiceTest {
     @Mock
     private TokenRepository tokenRepository;
 
+    @Mock
+    private QueueRedisRepository queueRedisRepository;
+
     @InjectMocks
     private TokenService tokenService;
 
     @Test
-    @DisplayName("토큰 발급 성공 - 신규 사용자")
-    void issueToken_success_newUser() {
+    @DisplayName("대기열 진입 성공 - Redis 대기열에 추가")
+    void issueToken_success() {
         // given
         Long userId = 1L;
         when(tokenRepository.findActiveTokenByUserId(userId))
             .thenReturn(Optional.empty());
-        when(tokenRepository.save(any(Token.class)))
-            .thenAnswer(invocation -> {
-                Token token = invocation.getArgument(0);
-                return Token.reconstitute(
-                    1L,
-                    token.getTokenValue(),
-                    token.getUserId(),
-                    token.getStatus(),
-                    token.getCreatedAt(),
-                    token.getActivatedAt(),
-                    token.getExpiresAt()
-                );
-            });
+        when(queueRedisRepository.addToWaitingQueue(userId))
+            .thenReturn(5L); // 5번째 대기
 
         // when
-        Token token = tokenService.issueToken(userId);
+        long position = tokenService.issueToken(userId);
 
         // then
-        assertThat(token.getUserId()).isEqualTo(userId);
-        assertThat(token.getStatus()).isEqualTo(TokenStatus.WAITING);
-        assertThat(token.getTokenValue()).isNotNull();
+        assertThat(position).isEqualTo(5L);
         verify(tokenRepository).findActiveTokenByUserId(userId);
-        verify(tokenRepository).save(any(Token.class));
+        verify(queueRedisRepository).addToWaitingQueue(userId);
     }
 
     @Test
-    @DisplayName("토큰 발급 실패 - 이미 활성화된 토큰 존재")
-    void issueToken_fail_alreadyActive() {
+    @DisplayName("대기열 진입 실패 - 이미 활성화된 토큰 존재 (RDB)")
+    void issueToken_fail_alreadyActiveInRdb() {
         // given
         Long userId = 1L;
-        Token activeToken = Token.issue(userId).activate();
+        Token activeToken = Token.issueActive(userId, LocalDateTime.now().plusMinutes(10));
         when(tokenRepository.findActiveTokenByUserId(userId))
             .thenReturn(Optional.of(activeToken));
 
@@ -78,211 +70,200 @@ class TokenServiceTest {
             .isInstanceOf(IllegalStateException.class)
             .hasMessage("이미 활성화된 토큰이 존재합니다.");
         verify(tokenRepository).findActiveTokenByUserId(userId);
-        verify(tokenRepository, never()).save(any(Token.class));
+        verify(queueRedisRepository, never()).addToWaitingQueue(anyLong());
     }
 
     @Test
-    @DisplayName("대기열 순번 조회 성공 - 3번째 대기")
+    @DisplayName("대기열 진입 실패 - 이미 대기열에 있음 (Redis)")
+    void issueToken_fail_alreadyInQueue() {
+        // given
+        Long userId = 1L;
+        when(tokenRepository.findActiveTokenByUserId(userId))
+            .thenReturn(Optional.empty());
+        when(queueRedisRepository.addToWaitingQueue(userId))
+            .thenThrow(new IllegalStateException("이미 대기열에 있습니다."));
+
+        // when & then
+        assertThatThrownBy(() -> tokenService.issueToken(userId))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("이미 대기열에 있습니다");
+    }
+
+    @Test
+    @DisplayName("대기열 순번 조회 - Redis ZRANK")
     void getQueuePosition_success() {
         // given
-        Token myToken = Token.reconstitute(
-            3L,
-            "my-token",
-            1L,
-            TokenStatus.WAITING,
-            LocalDateTime.now().minusMinutes(30),
-            null,
-            null
-        );
-        when(tokenRepository.findByTokenValue("my-token"))
-            .thenReturn(Optional.of(myToken));
-        when(tokenRepository.findByStatusOrderByCreatedAt(TokenStatus.WAITING))
-            .thenReturn(List.of(
-                Token.reconstitute(1L, "token-1", 10L, TokenStatus.WAITING, LocalDateTime.now().minusMinutes(50), null, null),
-                Token.reconstitute(2L, "token-2", 11L, TokenStatus.WAITING, LocalDateTime.now().minusMinutes(40), null, null),
-                myToken,
-                Token.reconstitute(4L, "token-4", 12L, TokenStatus.WAITING, LocalDateTime.now().minusMinutes(20), null, null)
-            ));
+        Long userId = 1L;
+        when(queueRedisRepository.getWaitingPosition(userId))
+            .thenReturn(3L);
 
         // when
-        long position = tokenService.getQueuePosition("my-token");
+        long position = tokenService.getQueuePosition(userId);
 
         // then
         assertThat(position).isEqualTo(3L);
-        verify(tokenRepository).findByTokenValue("my-token");
-        verify(tokenRepository).findByStatusOrderByCreatedAt(TokenStatus.WAITING);
+        verify(queueRedisRepository).getWaitingPosition(userId);
     }
 
     @Test
-    @DisplayName("대기열 순번 조회 실패 - 토큰 없음")
-    void getQueuePosition_fail_notFound() {
+    @DisplayName("대기열 순번 조회 - 대기열에 없으면 0")
+    void getQueuePosition_notInQueue() {
         // given
-        when(tokenRepository.findByTokenValue("unknown-token"))
-            .thenReturn(Optional.empty());
-
-        // when & then
-        assertThatThrownBy(() -> tokenService.getQueuePosition("unknown-token"))
-            .isInstanceOf(IllegalArgumentException.class)
-            .hasMessage("토큰을 찾을 수 없습니다.");
-        verify(tokenRepository).findByTokenValue("unknown-token");
-    }
-
-    @Test
-    @DisplayName("대기열 순번 조회 - 대기 상태가 아니면 0 반환")
-    void getQueuePosition_notWaiting_returnsZero() {
-        // given
-        Token activeToken = Token.issue(1L).activate();
-        when(tokenRepository.findByTokenValue("active-token"))
-            .thenReturn(Optional.of(activeToken));
+        Long userId = 1L;
+        when(queueRedisRepository.getWaitingPosition(userId))
+            .thenReturn(0L);
 
         // when
-        long position = tokenService.getQueuePosition("active-token");
+        long position = tokenService.getQueuePosition(userId);
 
         // then
         assertThat(position).isZero();
-        verify(tokenRepository).findByTokenValue("active-token");
     }
 
     @Test
-    @DisplayName("대기 토큰 활성화 성공 - 3개 슬롯, 5개 대기 → 3개 활성화")
+    @DisplayName("대기열 상태 조회 - 활성 유저")
+    void getQueueStatus_active() {
+        // given
+        Long userId = 1L;
+        when(queueRedisRepository.isActiveUser(userId)).thenReturn(true);
+
+        // when
+        QueueStatusResponse response = tokenService.getQueueStatus(userId);
+
+        // then
+        assertThat(response.status()).isEqualTo("ACTIVE");
+        assertThat(response.position()).isZero();
+    }
+
+    @Test
+    @DisplayName("대기열 상태 조회 - 대기 중")
+    void getQueueStatus_waiting() {
+        // given
+        Long userId = 1L;
+        when(queueRedisRepository.isActiveUser(userId)).thenReturn(false);
+        when(queueRedisRepository.getWaitingPosition(userId)).thenReturn(5L);
+
+        // when
+        QueueStatusResponse response = tokenService.getQueueStatus(userId);
+
+        // then
+        assertThat(response.status()).isEqualTo("WAITING");
+        assertThat(response.position()).isEqualTo(5L);
+    }
+
+    @Test
+    @DisplayName("대기열 상태 조회 - 큐에 없음")
+    void getQueueStatus_notInQueue() {
+        // given
+        Long userId = 1L;
+        when(queueRedisRepository.isActiveUser(userId)).thenReturn(false);
+        when(queueRedisRepository.getWaitingPosition(userId)).thenReturn(0L);
+
+        // when
+        QueueStatusResponse response = tokenService.getQueueStatus(userId);
+
+        // then
+        assertThat(response.status()).isEqualTo("NOT_IN_QUEUE");
+    }
+
+    @Test
+    @DisplayName("토큰 활성화 성공 - Redis pop + RDB INSERT")
     void activateWaitingTokens_success() {
         // given
-        when(tokenRepository.countByStatus(TokenStatus.ACTIVE))
-            .thenReturn(97L); // 100 - 97 = 3개 슬롯
-
-        List<Token> waitingTokens = List.of(
-            Token.reconstitute(1L, "token-1", 10L, TokenStatus.WAITING, LocalDateTime.now().minusMinutes(50), null, null),
-            Token.reconstitute(2L, "token-2", 11L, TokenStatus.WAITING, LocalDateTime.now().minusMinutes(40), null, null),
-            Token.reconstitute(3L, "token-3", 12L, TokenStatus.WAITING, LocalDateTime.now().minusMinutes(30), null, null),
-            Token.reconstitute(4L, "token-4", 13L, TokenStatus.WAITING, LocalDateTime.now().minusMinutes(20), null, null),
-            Token.reconstitute(5L, "token-5", 14L, TokenStatus.WAITING, LocalDateTime.now().minusMinutes(10), null, null)
-        );
-        when(tokenRepository.findByStatusOrderByCreatedAt(TokenStatus.WAITING))
-            .thenReturn(waitingTokens);
+        when(queueRedisRepository.getActiveUserCount()).thenReturn(97L); // 3 slots
+        when(queueRedisRepository.popAndActivate(anyInt(), anyLong()))
+            .thenReturn(List.of(1L, 2L, 3L));
         when(tokenRepository.save(any(Token.class)))
             .thenAnswer(invocation -> invocation.getArgument(0));
 
         // when
-        int activatedCount = tokenService.activateWaitingTokens();
+        int count = tokenService.activateWaitingTokens();
 
         // then
-        assertThat(activatedCount).isEqualTo(3);
-        verify(tokenRepository).countByStatus(TokenStatus.ACTIVE);
-        verify(tokenRepository).findByStatusOrderByCreatedAt(TokenStatus.WAITING);
+        assertThat(count).isEqualTo(3);
+        verify(queueRedisRepository).popAndActivate(eq(3), anyLong());
         verify(tokenRepository, times(3)).save(any(Token.class));
     }
 
     @Test
-    @DisplayName("대기 토큰 활성화 - 슬롯 없음")
+    @DisplayName("토큰 활성화 - 슬롯 없음")
     void activateWaitingTokens_noSlots() {
         // given
-        when(tokenRepository.countByStatus(TokenStatus.ACTIVE))
-            .thenReturn(100L); // 슬롯 없음
+        when(queueRedisRepository.getActiveUserCount()).thenReturn(100L);
 
         // when
-        int activatedCount = tokenService.activateWaitingTokens();
+        int count = tokenService.activateWaitingTokens();
 
         // then
-        assertThat(activatedCount).isZero();
-        verify(tokenRepository).countByStatus(TokenStatus.ACTIVE);
-        verify(tokenRepository, never()).findByStatusOrderByCreatedAt(any());
-        verify(tokenRepository, never()).save(any(Token.class));
+        assertThat(count).isZero();
+        verify(queueRedisRepository, never()).popAndActivate(anyInt(), anyLong());
     }
 
     @Test
-    @DisplayName("대기 토큰 활성화 - 대기자 없음")
+    @DisplayName("토큰 활성화 - 대기자 없음")
     void activateWaitingTokens_noWaiting() {
         // given
-        when(tokenRepository.countByStatus(TokenStatus.ACTIVE))
-            .thenReturn(50L); // 50개 슬롯
-        when(tokenRepository.findByStatusOrderByCreatedAt(TokenStatus.WAITING))
-            .thenReturn(List.of()); // 대기자 없음
+        when(queueRedisRepository.getActiveUserCount()).thenReturn(50L);
+        when(queueRedisRepository.popAndActivate(anyInt(), anyLong()))
+            .thenReturn(List.of());
 
         // when
-        int activatedCount = tokenService.activateWaitingTokens();
+        int count = tokenService.activateWaitingTokens();
 
         // then
-        assertThat(activatedCount).isZero();
-        verify(tokenRepository).countByStatus(TokenStatus.ACTIVE);
-        verify(tokenRepository).findByStatusOrderByCreatedAt(TokenStatus.WAITING);
-        verify(tokenRepository, never()).save(any(Token.class));
+        assertThat(count).isZero();
     }
 
     @Test
-    @DisplayName("만료된 토큰 정리 성공")
+    @DisplayName("토큰 활성화 RDB 실패 시 Redis 롤백")
+    void activateWaitingTokens_rollbackOnRdbFailure() {
+        // given
+        List<Long> activatedUsers = List.of(1L, 2L, 3L);
+        when(queueRedisRepository.getActiveUserCount()).thenReturn(97L);
+        when(queueRedisRepository.popAndActivate(anyInt(), anyLong()))
+            .thenReturn(activatedUsers);
+        when(tokenRepository.save(any(Token.class)))
+            .thenThrow(new RuntimeException("DB 저장 실패"));
+
+        // when & then
+        assertThatThrownBy(() -> tokenService.activateWaitingTokens())
+            .isInstanceOf(RuntimeException.class);
+        verify(queueRedisRepository).rollbackActivation(activatedUsers);
+    }
+
+    @Test
+    @DisplayName("만료된 활성 유저 정리")
     void expireExpiredTokens_success() {
         // given
-        Token expiredToken1 = Token.reconstitute(
-            1L,
-            "token-1",
-            10L,
-            TokenStatus.ACTIVE,
-            LocalDateTime.now().minusMinutes(30),
-            LocalDateTime.now().minusMinutes(30),
-            LocalDateTime.now().minusMinutes(5) // 5분 전 만료
-        );
-        Token expiredToken2 = Token.reconstitute(
-            2L,
-            "token-2",
-            11L,
-            TokenStatus.ACTIVE,
-            LocalDateTime.now().minusMinutes(25),
-            LocalDateTime.now().minusMinutes(25),
-            LocalDateTime.now().minusMinutes(1) // 1분 전 만료
-        );
+        List<Long> expiredUserIds = List.of(1L, 2L);
+        Token token1 = Token.issueActive(1L, LocalDateTime.now().minusMinutes(1));
+        Token token2 = Token.issueActive(2L, LocalDateTime.now().minusMinutes(1));
 
-        when(tokenRepository.findByStatusOrderByCreatedAt(TokenStatus.ACTIVE))
-            .thenReturn(List.of(expiredToken1, expiredToken2));
-        when(tokenRepository.save(any(Token.class)))
-            .thenAnswer(invocation -> invocation.getArgument(0));
+        when(queueRedisRepository.removeExpiredActiveUsers()).thenReturn(expiredUserIds);
+        when(tokenRepository.findActiveTokenByUserId(1L)).thenReturn(Optional.of(token1));
+        when(tokenRepository.findActiveTokenByUserId(2L)).thenReturn(Optional.of(token2));
+        when(tokenRepository.save(any(Token.class))).thenAnswer(inv -> inv.getArgument(0));
 
         // when
-        int expiredCount = tokenService.expireExpiredTokens();
+        int count = tokenService.expireExpiredTokens();
 
         // then
-        assertThat(expiredCount).isEqualTo(2);
-        verify(tokenRepository).findByStatusOrderByCreatedAt(TokenStatus.ACTIVE);
+        assertThat(count).isEqualTo(2);
+        verify(queueRedisRepository).removeExpiredActiveUsers();
         verify(tokenRepository, times(2)).save(any(Token.class));
-    }
-
-    @Test
-    @DisplayName("만료된 토큰 정리 - 만료된 토큰 없음")
-    void expireExpiredTokens_nothingToExpire() {
-        // given
-        Token activeToken = Token.reconstitute(
-            1L,
-            "token-1",
-            10L,
-            TokenStatus.ACTIVE,
-            LocalDateTime.now().minusMinutes(5),
-            LocalDateTime.now().minusMinutes(5),
-            LocalDateTime.now().plusMinutes(5) // 아직 유효
-        );
-
-        when(tokenRepository.findByStatusOrderByCreatedAt(TokenStatus.ACTIVE))
-            .thenReturn(List.of(activeToken));
-
-        // when
-        int expiredCount = tokenService.expireExpiredTokens();
-
-        // then
-        assertThat(expiredCount).isZero();
-        verify(tokenRepository).findByStatusOrderByCreatedAt(TokenStatus.ACTIVE);
-        verify(tokenRepository, never()).save(any(Token.class));
     }
 
     @Test
     @DisplayName("토큰 검증 성공 - 활성 토큰")
     void validateToken_success() {
         // given
-        Token activeToken = Token.issue(1L).activate();
+        Token activeToken = Token.issueActive(1L, LocalDateTime.now().plusMinutes(5));
         when(tokenRepository.findByTokenValue("active-token"))
             .thenReturn(Optional.of(activeToken));
 
         // when & then
         assertThatCode(() -> tokenService.validateToken("active-token"))
             .doesNotThrowAnyException();
-        verify(tokenRepository).findByTokenValue("active-token");
     }
 
     @Test
@@ -296,37 +277,13 @@ class TokenServiceTest {
         assertThatThrownBy(() -> tokenService.validateToken("unknown-token"))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessage("유효하지 않은 토큰입니다.");
-        verify(tokenRepository).findByTokenValue("unknown-token");
-    }
-
-    @Test
-    @DisplayName("토큰 검증 실패 - 대기 상태 토큰")
-    void validateToken_fail_waiting() {
-        // given
-        Token waitingToken = Token.issue(1L);
-        when(tokenRepository.findByTokenValue("waiting-token"))
-            .thenReturn(Optional.of(waitingToken));
-
-        // when & then
-        assertThatThrownBy(() -> tokenService.validateToken("waiting-token"))
-            .isInstanceOf(IllegalStateException.class)
-            .hasMessageContaining("활성 상태가 아닌 토큰입니다");
-        verify(tokenRepository).findByTokenValue("waiting-token");
     }
 
     @Test
     @DisplayName("토큰 검증 실패 - 만료된 토큰")
     void validateToken_fail_expired() {
         // given
-        Token expiredToken = Token.reconstitute(
-            1L,
-            "expired-token",
-            1L,
-            TokenStatus.ACTIVE,
-            LocalDateTime.now().minusMinutes(30),
-            LocalDateTime.now().minusMinutes(30),
-            LocalDateTime.now().minusMinutes(5) // 5분 전 만료
-        );
+        Token expiredToken = Token.issueActive(1L, LocalDateTime.now().minusMinutes(1));
         when(tokenRepository.findByTokenValue("expired-token"))
             .thenReturn(Optional.of(expiredToken));
 
@@ -334,6 +291,5 @@ class TokenServiceTest {
         assertThatThrownBy(() -> tokenService.validateToken("expired-token"))
             .isInstanceOf(IllegalStateException.class)
             .hasMessageContaining("활성 상태가 아닌 토큰입니다");
-        verify(tokenRepository).findByTokenValue("expired-token");
     }
 }

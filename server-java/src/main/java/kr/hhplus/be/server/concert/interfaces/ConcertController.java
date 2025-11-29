@@ -47,4 +47,12 @@ public class ConcertController {
     public ResponseEntity<List<SeatResponse>> getSeats(@PathVariable Long scheduleId) {
         return ResponseEntity.ok(concertService.getAvailableSeats(scheduleId));
     }
+
+    // 시나리오 5: 콘서트 랭킹 조회
+    @GetMapping("/concerts/ranking")
+    public ResponseEntity<List<ConcertResponse>> getRanking(
+            @RequestParam(defaultValue = "daily") String period,
+            @RequestParam(defaultValue = "10") int limit) {
+        return ResponseEntity.ok(concertService.getTopRankedConcerts(period, limit));
+    }
 }

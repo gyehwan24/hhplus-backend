@@ -1,7 +1,10 @@
 package kr.hhplus.be.server.payment.application;
 
+import kr.hhplus.be.server.concert.domain.ConcertSchedule;
 import kr.hhplus.be.server.concert.domain.ScheduleSeat;
+import kr.hhplus.be.server.concert.domain.repository.ConcertScheduleRepository;
 import kr.hhplus.be.server.concert.domain.repository.ScheduleSeatRepository;
+import kr.hhplus.be.server.payment.domain.event.PaymentCompletedEvent;
 import kr.hhplus.be.server.payment.domain.model.Payment;
 import kr.hhplus.be.server.payment.domain.repository.PaymentRepository;
 import kr.hhplus.be.server.reservation.domain.model.Reservation;
@@ -14,6 +17,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.Cache;
 import org.springframework.cache.CacheManager;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -36,7 +40,9 @@ public class PaymentService {
     private final ReservationDetailRepository reservationDetailRepository;
     private final UserBalanceRepository userBalanceRepository;
     private final ScheduleSeatRepository scheduleSeatRepository;
+    private final ConcertScheduleRepository concertScheduleRepository;
     private final CacheManager cacheManager;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public Payment processPayment(Long reservationId, Long userId) {
@@ -69,7 +75,14 @@ public class PaymentService {
         evictSeatCache(reservation.getScheduleId());
 
         Payment payment = Payment.complete(reservationId, userId, reservation.getTotalAmount());
-        return paymentRepository.save(payment);
+        Payment savedPayment = paymentRepository.save(payment);
+
+        // 결제 완료 이벤트 발행 (랭킹 업데이트용)
+        ConcertSchedule schedule = concertScheduleRepository.findById(reservation.getScheduleId())
+                .orElseThrow(() -> new IllegalStateException("스케줄을 찾을 수 없습니다."));
+        eventPublisher.publishEvent(PaymentCompletedEvent.of(schedule.getConcertId()));
+
+        return savedPayment;
     }
 
     public Payment getPayment(Long paymentId) {

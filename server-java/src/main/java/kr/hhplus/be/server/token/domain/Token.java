@@ -33,7 +33,7 @@ public class Token {
     }
 
     /**
-     * 토큰 발급 (팩토리 메서드)
+     * 토큰 발급 (팩토리 메서드) - 대기 상태
      * @param userId 사용자 ID
      * @return 대기 상태의 새로운 토큰
      */
@@ -51,6 +51,34 @@ public class Token {
             now,
             null,
             null
+        );
+    }
+
+    /**
+     * 활성 상태로 토큰 발급 (팩토리 메서드)
+     * - Redis 대기열에서 활성화된 유저를 RDB에 저장할 때 사용
+     *
+     * @param userId 사용자 ID
+     * @param expiresAt 만료 시각
+     * @return 활성 상태의 새로운 토큰
+     */
+    public static Token issueActive(Long userId, LocalDateTime expiresAt) {
+        if (userId == null) {
+            throw new IllegalArgumentException("사용자 ID는 필수입니다.");
+        }
+        if (expiresAt == null) {
+            throw new IllegalArgumentException("만료 시각은 필수입니다.");
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        return new Token(
+            null,
+            UUID.randomUUID().toString(),
+            userId,
+            TokenStatus.ACTIVE,
+            now,
+            now,
+            expiresAt
         );
     }
 
