@@ -1,5 +1,6 @@
 package kr.hhplus.be.server.token.application;
 
+import kr.hhplus.be.server.config.redis.DistributedLock;
 import kr.hhplus.be.server.token.domain.Token;
 import kr.hhplus.be.server.token.domain.TokenStatus;
 import kr.hhplus.be.server.token.domain.repository.TokenRepository;
@@ -72,9 +73,11 @@ public class TokenService {
      * 대기 중인 토큰을 활성화
      * - 배치 또는 스케줄러에서 주기적으로 호출
      * - 현재 활성 토큰이 MAX_ACTIVE_TOKENS보다 적으면 대기 토큰을 활성화
+     * - 분산락으로 다중 서버 환경에서 중복 실행 방지
      *
      * @return 활성화된 토큰 개수
      */
+    @DistributedLock(key = "'scheduler:token:activate'", waitTime = 3, leaseTime = 30)
     public int activateWaitingTokens() {
         // 현재 활성 토큰 개수 확인
         long activeCount = tokenRepository.countByStatus(TokenStatus.ACTIVE);
