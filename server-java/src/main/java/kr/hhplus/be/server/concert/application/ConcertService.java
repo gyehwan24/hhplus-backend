@@ -8,6 +8,7 @@ import kr.hhplus.be.server.concert.domain.ScheduleSeat;
 import kr.hhplus.be.server.concert.domain.repository.ConcertRepository;
 import kr.hhplus.be.server.concert.domain.repository.ConcertScheduleRepository;
 import kr.hhplus.be.server.concert.domain.repository.ScheduleSeatRepository;
+import kr.hhplus.be.server.concert.infrastructure.redis.ConcertRankingRedisRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.Cacheable;
@@ -28,6 +29,7 @@ public class ConcertService {
     private final ConcertRepository concertRepository;
     private final ConcertScheduleRepository scheduleRepository;
     private final ScheduleSeatRepository seatRepository;
+    private final ConcertRankingRedisRepository rankingRedisRepository;
 
     /**
      * 예약 가능한 콘서트 일정 조회
@@ -86,5 +88,25 @@ public class ConcertService {
         return concertRepository.findById(concertId)
             .map(ConcertResponse::from)
             .orElseThrow(() -> new IllegalArgumentException("Concert not found: " + concertId));
+    }
+
+    /**
+     * 랭킹 상위 콘서트 조회
+     *
+     * @param period 기간 (daily, weekly, monthly)
+     * @param limit 조회 개수
+     * @return 랭킹 상위 콘서트 목록
+     */
+    public List<ConcertResponse> getTopRankedConcerts(String period, int limit) {
+        List<Long> concertIds = rankingRedisRepository.getTopConcertIds(period, limit);
+
+        if (concertIds.isEmpty()) {
+            return List.of();
+        }
+
+        // 캐시된 콘서트 정보 조회
+        return concertIds.stream()
+            .map(this::getConcertById)
+            .toList();
     }
 }
