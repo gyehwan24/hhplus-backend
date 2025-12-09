@@ -77,10 +77,26 @@ public class PaymentService {
         Payment payment = Payment.complete(reservationId, userId, reservation.getTotalAmount());
         Payment savedPayment = paymentRepository.save(payment);
 
-        // 결제 완료 이벤트 발행 (랭킹 업데이트용)
+        // 결제 완료 이벤트 발행 (랭킹 업데이트 + 데이터 플랫폼 전송)
         ConcertSchedule schedule = concertScheduleRepository.findById(reservation.getScheduleId())
                 .orElseThrow(() -> new IllegalStateException("스케줄을 찾을 수 없습니다."));
-        eventPublisher.publishEvent(PaymentCompletedEvent.of(schedule.getConcertId()));
+
+        List<PaymentCompletedEvent.SeatInfo> seatInfos = reservationDetails.stream()
+                .map(detail -> new PaymentCompletedEvent.SeatInfo(
+                        detail.getSeatId(),
+                        detail.getSeatNumber(),
+                        detail.getPrice()))
+                .toList();
+
+        eventPublisher.publishEvent(PaymentCompletedEvent.of(
+                savedPayment.getId(),
+                reservationId,
+                userId,
+                schedule.getConcertId(),
+                reservation.getScheduleId(),
+                reservation.getTotalAmount(),
+                seatInfos
+        ));
 
         return savedPayment;
     }
