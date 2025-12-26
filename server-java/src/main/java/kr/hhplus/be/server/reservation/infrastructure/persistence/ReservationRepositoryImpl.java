@@ -18,8 +18,17 @@ public class ReservationRepositoryImpl implements ReservationRepository {
 
     @Override
     public Reservation save(Reservation reservation) {
-        // Domain → Entity 변환
-        ReservationEntity entity = ReservationEntity.from(reservation);
+        ReservationEntity entity;
+
+        if (reservation.getId() != null) {
+            // 기존 엔티티 조회 후 업데이트 (version 유지)
+            entity = jpaRepository.findById(reservation.getId())
+                    .orElseThrow(() -> new IllegalStateException("예약을 찾을 수 없습니다."));
+            entity.updateFrom(reservation);
+        } else {
+            // 새 엔티티 생성
+            entity = ReservationEntity.from(reservation);
+        }
 
         // JPA로 저장
         ReservationEntity saved = jpaRepository.save(entity);

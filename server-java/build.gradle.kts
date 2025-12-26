@@ -38,6 +38,9 @@ dependencies {
 	implementation("org.springframework.boot:spring-boot-starter-cache")
 	implementation("org.springframework.boot:spring-boot-starter-aop")
 
+    // Kafka
+	implementation("org.springframework.kafka:spring-kafka")
+
     // Redisson (Distributed Lock)
 	implementation("org.redisson:redisson-spring-boot-starter:3.37.0")
 
@@ -56,6 +59,8 @@ dependencies {
 	testImplementation("org.testcontainers:junit-jupiter")
 	testImplementation("org.testcontainers:mysql")
 	testImplementation("com.redis:testcontainers-redis:2.2.2")
+	testImplementation("org.springframework.kafka:spring-kafka-test")
+	testImplementation("org.testcontainers:kafka")
 	testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
