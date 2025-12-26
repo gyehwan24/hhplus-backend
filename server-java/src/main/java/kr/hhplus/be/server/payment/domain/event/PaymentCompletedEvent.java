@@ -7,6 +7,10 @@ import java.util.List;
 /**
  * 결제 완료 이벤트
  * 결제가 성공적으로 완료되었을 때 발행됨
+ *
+ * 리스너:
+ * - ConcertRankingEventListener: 랭킹 업데이트 (concertId 사용)
+ * - DataPlatformEventListener: Kafka로 데이터 플랫폼 전송 (전체 정보 사용)
  */
 public record PaymentCompletedEvent(
     Long paymentId,
@@ -18,6 +22,9 @@ public record PaymentCompletedEvent(
     List<SeatInfo> seats,
     LocalDateTime completedAt
 ) {
+    /**
+     * 좌석 정보
+     */
     public record SeatInfo(
         Long seatId,
         Integer seatNumber,
@@ -25,7 +32,7 @@ public record PaymentCompletedEvent(
     ) {}
 
     /**
-     * 전체 정보로 이벤트 생성
+     * 결제 완료 이벤트 생성
      */
     public static PaymentCompletedEvent of(
         Long paymentId,

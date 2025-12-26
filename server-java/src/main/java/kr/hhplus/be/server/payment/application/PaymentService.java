@@ -113,7 +113,7 @@ public class PaymentService {
 
     /**
      * 좌석 캐시 무효화
-     * 
+     *
      * @param scheduleId 스케줄 ID
      */
     private void evictSeatCache(Long scheduleId) {
