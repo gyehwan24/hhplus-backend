@@ -26,10 +26,48 @@ public class QueueRedisRepository {
 
     private final StringRedisTemplate redisTemplate;
     private final DefaultRedisScript<List> popAndActivateScript;
+    private final DefaultRedisScript<Long> addToWaitingQueueScript;
 
     public QueueRedisRepository(StringRedisTemplate redisTemplate) {
         this.redisTemplate = redisTemplate;
         this.popAndActivateScript = createPopAndActivateScript();
+        this.addToWaitingQueueScript = createAddToWaitingQueueScript();
+    }
+
+    /**
+     * Lua 스크립트 생성 - 대기열 추가 원자적 처리
+     * 중복 체크와 추가를 원자적으로 수행하여 Race Condition 방지
+     */
+    private DefaultRedisScript<Long> createAddToWaitingQueueScript() {
+        String script = """
+            local waitingKey = KEYS[1]
+            local activeKey = KEYS[2]
+            local userId = ARGV[1]
+            local score = tonumber(ARGV[2])
+
+            -- 대기열에 이미 있는지 확인
+            local inWaiting = redis.call('ZSCORE', waitingKey, userId)
+            if inWaiting then
+                return -1  -- 이미 대기열에 있음
+            end
+
+            -- 활성 큐에 있는지 확인 (만료 여부도 체크)
+            local expireAt = redis.call('ZSCORE', activeKey, userId)
+            if expireAt and tonumber(expireAt) > score then
+                return -2  -- 이미 활성 상태
+            end
+
+            -- 대기열에 추가
+            redis.call('ZADD', waitingKey, score, userId)
+
+            -- 순번 반환 (0-based)
+            return redis.call('ZRANK', waitingKey, userId)
+            """;
+
+        DefaultRedisScript<Long> redisScript = new DefaultRedisScript<>();
+        redisScript.setScriptText(script);
+        redisScript.setResultType(Long.class);
+        return redisScript;
     }
 
     /**
@@ -65,7 +103,7 @@ public class QueueRedisRepository {
     }
 
     /**
-     * 대기열에 유저 추가
+     * 대기열에 유저 추가 (Lua 스크립트 사용 - 원자적)
      *
      * @param userId 유저 ID
      * @return 대기열 순번 (1부터 시작)
@@ -73,22 +111,30 @@ public class QueueRedisRepository {
      */
     public long addToWaitingQueue(Long userId) {
         String userIdStr = userId.toString();
+        long score = System.currentTimeMillis();
 
-        // 중복 체크 - 대기열 또는 활성 큐에 있는지 확인
-        if (isInWaitingQueue(userId)) {
+        List<String> keys = List.of(WAITING_QUEUE_KEY, ACTIVE_QUEUE_KEY);
+        Long result = redisTemplate.execute(
+                addToWaitingQueueScript,
+                keys,
+                userIdStr,
+                String.valueOf(score)
+        );
+
+        if (result == null) {
+            throw new IllegalStateException("대기열 추가 실패");
+        }
+
+        if (result == -1) {
             throw new IllegalStateException("이미 대기열에 있습니다.");
         }
-        if (isActiveUser(userId)) {
+
+        if (result == -2) {
             throw new IllegalStateException("이미 활성화된 상태입니다.");
         }
 
-        // 대기열에 추가 (score = 현재 시각 timestamp)
-        double score = System.currentTimeMillis();
-        redisTemplate.opsForZSet().add(WAITING_QUEUE_KEY, userIdStr, score);
-
         // 순번 반환 (0-based rank + 1)
-        Long rank = redisTemplate.opsForZSet().rank(WAITING_QUEUE_KEY, userIdStr);
-        return rank != null ? rank + 1 : 1;
+        return result + 1;
     }
 
     /**

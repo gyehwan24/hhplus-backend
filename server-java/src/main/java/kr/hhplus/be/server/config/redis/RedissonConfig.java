@@ -37,8 +37,10 @@ public class RedissonConfig {
         Config config = new Config();
         config.useSingleServer()
                 .setAddress("redis://" + host + ":" + port)
-                .setConnectionPoolSize(50)      // 커넥션 풀 크기
-                .setConnectionMinimumIdleSize(10)  // 최소 유휴 커넥션
+                .setConnectionPoolSize(100)     // 커넥션 풀 크기 (50 → 100)
+                .setConnectionMinimumIdleSize(20)  // 최소 유휴 커넥션 (10 → 20)
+                .setIdleConnectionTimeout(30000)   // 유휴 커넥션 타임아웃 (30초)
+                .setTimeout(5000)               // 명령 타임아웃 (5초)
                 .setRetryAttempts(3)            // 재시도 횟수
                 .setRetryInterval(1500);        // 재시도 간격 (ms)
 
