@@ -1,6 +1,8 @@
 package kr.hhplus.be.server.token.infrastructure.redis;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataAccessException;
+import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Repository;
@@ -45,6 +47,14 @@ public class QueueRedisRepository {
             local userId = ARGV[1]
             local score = tonumber(ARGV[2])
 
+            -- 입력값 검증
+            if not userId or userId == '' then
+                return -3  -- INVALID_USER_ID
+            end
+            if not score then
+                return -4  -- INVALID_SCORE
+            end
+
             -- 대기열에 이미 있는지 확인
             local inWaiting = redis.call('ZSCORE', waitingKey, userId)
             if inWaiting then
@@ -60,8 +70,12 @@ public class QueueRedisRepository {
             -- 대기열에 추가
             redis.call('ZADD', waitingKey, score, userId)
 
-            -- 순번 반환 (0-based)
-            return redis.call('ZRANK', waitingKey, userId)
+            -- 순번 반환 (0-based), 추가 실패 시 nil 체크
+            local rank = redis.call('ZRANK', waitingKey, userId)
+            if rank == nil then
+                return -5  -- ADD_FAILED
+            end
+            return rank
             """;
 
         DefaultRedisScript<Long> redisScript = new DefaultRedisScript<>();
@@ -107,34 +121,56 @@ public class QueueRedisRepository {
      *
      * @param userId 유저 ID
      * @return 대기열 순번 (1부터 시작)
-     * @throws IllegalStateException 이미 대기열에 있는 경우
+     * @throws IllegalStateException 이미 대기열에 있거나 Redis 오류 발생 시
      */
     public long addToWaitingQueue(Long userId) {
         String userIdStr = userId.toString();
         long score = System.currentTimeMillis();
 
         List<String> keys = List.of(WAITING_QUEUE_KEY, ACTIVE_QUEUE_KEY);
-        Long result = redisTemplate.execute(
-                addToWaitingQueueScript,
-                keys,
-                userIdStr,
-                String.valueOf(score)
-        );
 
-        if (result == null) {
-            throw new IllegalStateException("대기열 추가 실패");
+        try {
+            Long result = redisTemplate.execute(
+                    addToWaitingQueueScript,
+                    keys,
+                    userIdStr,
+                    String.valueOf(score)
+            );
+
+            if (result == null) {
+                throw new IllegalStateException("대기열 추가 실패");
+            }
+
+            if (result == -1) {
+                throw new IllegalStateException("이미 대기열에 있습니다.");
+            }
+
+            if (result == -2) {
+                throw new IllegalStateException("이미 활성화된 상태입니다.");
+            }
+
+            if (result == -3) {
+                throw new IllegalArgumentException("유효하지 않은 사용자 ID입니다.");
+            }
+
+            if (result == -4) {
+                throw new IllegalArgumentException("유효하지 않은 점수값입니다.");
+            }
+
+            if (result == -5) {
+                throw new IllegalStateException("대기열 추가에 실패했습니다.");
+            }
+
+            // 순번 반환 (0-based rank + 1)
+            return result + 1;
+
+        } catch (RedisConnectionFailureException e) {
+            log.error("Redis 연결 실패: userId={}", userId, e);
+            throw new IllegalStateException("대기열 서비스를 일시적으로 사용할 수 없습니다.", e);
+        } catch (DataAccessException e) {
+            log.error("Redis 명령 실행 실패: userId={}", userId, e);
+            throw new IllegalStateException("대기열 처리 중 오류가 발생했습니다.", e);
         }
-
-        if (result == -1) {
-            throw new IllegalStateException("이미 대기열에 있습니다.");
-        }
-
-        if (result == -2) {
-            throw new IllegalStateException("이미 활성화된 상태입니다.");
-        }
-
-        // 순번 반환 (0-based rank + 1)
-        return result + 1;
     }
 
     /**
@@ -189,24 +225,34 @@ public class QueueRedisRepository {
     @SuppressWarnings("unchecked")
     public List<Long> popAndActivate(int count, long expireAt) {
         List<String> keys = List.of(WAITING_QUEUE_KEY, ACTIVE_QUEUE_KEY);
-        List<Object> result = redisTemplate.execute(
-                popAndActivateScript,
-                keys,
-                String.valueOf(count),
-                String.valueOf(expireAt)
-        );
 
-        if (result == null || result.isEmpty()) {
-            return Collections.emptyList();
+        try {
+            List<Object> result = redisTemplate.execute(
+                    popAndActivateScript,
+                    keys,
+                    String.valueOf(count),
+                    String.valueOf(expireAt)
+            );
+
+            if (result == null || result.isEmpty()) {
+                return Collections.emptyList();
+            }
+
+            List<Long> userIds = new ArrayList<>();
+            for (Object item : result) {
+                userIds.add(Long.parseLong(item.toString()));
+            }
+
+            log.info("대기열 → 활성 큐 이동 완료: {}명, 만료시각: {}", userIds.size(), expireAt);
+            return userIds;
+
+        } catch (RedisConnectionFailureException e) {
+            log.error("Redis 연결 실패: 대기열 활성화 중 오류, count={}", count, e);
+            throw new IllegalStateException("대기열 서비스를 일시적으로 사용할 수 없습니다.", e);
+        } catch (DataAccessException e) {
+            log.error("Redis 명령 실행 실패: 대기열 활성화 중 오류, count={}", count, e);
+            throw new IllegalStateException("대기열 처리 중 오류가 발생했습니다.", e);
         }
-
-        List<Long> userIds = new ArrayList<>();
-        for (Object item : result) {
-            userIds.add(Long.parseLong(item.toString()));
-        }
-
-        log.info("대기열 → 활성 큐 이동 완료: {}명, 만료시각: {}", userIds.size(), expireAt);
-        return userIds;
     }
 
     /**
