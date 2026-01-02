@@ -1,8 +1,8 @@
 package kr.hhplus.be.server.payment.application.event;
 
 import kr.hhplus.be.server.payment.domain.event.PaymentCompletedEvent;
-import kr.hhplus.be.server.payment.infrastructure.external.DataPlatformClient;
-import kr.hhplus.be.server.payment.infrastructure.external.ReservationDataPayload;
+import kr.hhplus.be.server.payment.infrastructure.kafka.PaymentCompletedMessage;
+import kr.hhplus.be.server.payment.infrastructure.kafka.PaymentKafkaProducer;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -22,13 +22,13 @@ import static org.mockito.Mockito.*;
 class DataPlatformEventListenerTest {
 
     @Mock
-    private DataPlatformClient dataPlatformClient;
+    private PaymentKafkaProducer kafkaProducer;
 
     @InjectMocks
     private DataPlatformEventListener listener;
 
     @Test
-    @DisplayName("결제 완료 이벤트 수신 시 데이터 플랫폼에 전송")
+    @DisplayName("결제 완료 이벤트 수신 시 Kafka로 메시지 발행")
     void onPaymentCompleted_성공() {
         // given
         PaymentCompletedEvent event = createEvent();
@@ -37,16 +37,16 @@ class DataPlatformEventListenerTest {
         listener.onPaymentCompleted(event);
 
         // then
-        verify(dataPlatformClient).sendReservationData(any(ReservationDataPayload.class));
+        verify(kafkaProducer).send(any(PaymentCompletedMessage.class));
     }
 
     @Test
-    @DisplayName("데이터 플랫폼 전송 실패 시 예외가 전파되지 않음")
-    void onPaymentCompleted_전송실패_예외미전파() {
+    @DisplayName("Kafka 발행 실패 시 예외가 전파되지 않음")
+    void onPaymentCompleted_발행실패_예외미전파() {
         // given
         PaymentCompletedEvent event = createEvent();
-        doThrow(new RuntimeException("API 오류"))
-            .when(dataPlatformClient).sendReservationData(any());
+        doThrow(new RuntimeException("Kafka 오류"))
+            .when(kafkaProducer).send(any());
 
         // when & then - 예외가 전파되지 않음
         assertDoesNotThrow(() -> listener.onPaymentCompleted(event));
@@ -66,7 +66,7 @@ class DataPlatformEventListenerTest {
         listener.onPaymentCompleted(event);
 
         // then
-        verify(dataPlatformClient).sendReservationData(any(ReservationDataPayload.class));
+        verify(kafkaProducer).send(any(PaymentCompletedMessage.class));
     }
 
     private PaymentCompletedEvent createEvent() {

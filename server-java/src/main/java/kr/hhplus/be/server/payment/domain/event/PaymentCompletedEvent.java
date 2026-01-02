@@ -10,7 +10,7 @@ import java.util.List;
  *
  * 리스너:
  * - ConcertRankingEventListener: 랭킹 업데이트 (concertId 사용)
- * - DataPlatformEventListener: 데이터 플랫폼 전송 (전체 정보 사용)
+ * - DataPlatformEventListener: Kafka로 데이터 플랫폼 전송 (전체 정보 사용)
  */
 public record PaymentCompletedEvent(
     Long paymentId,

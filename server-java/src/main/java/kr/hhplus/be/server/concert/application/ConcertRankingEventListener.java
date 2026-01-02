@@ -32,7 +32,8 @@ public class ConcertRankingEventListener {
             log.debug("랭킹 업데이트 완료 - concertId: {}", event.concertId());
         } catch (Exception e) {
             // 랭킹 업데이트 실패가 결제에 영향을 주면 안 됨
-            log.error("랭킹 업데이트 실패 - concertId: {}", event.concertId(), e);
+            log.error("랭킹 업데이트 실패 - concertId: {}, reservationId: {}",
+                    event.concertId(), event.reservationId(), e);
         }
     }
 }

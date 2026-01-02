@@ -81,11 +81,11 @@ public class PaymentService {
         ConcertSchedule schedule = concertScheduleRepository.findById(reservation.getScheduleId())
                 .orElseThrow(() -> new IllegalStateException("스케줄을 찾을 수 없습니다."));
 
-        List<PaymentCompletedEvent.SeatInfo> seatInfos = reservationDetails.stream()
-                .map(detail -> new PaymentCompletedEvent.SeatInfo(
-                        detail.getSeatId(),
-                        detail.getSeatNumber(),
-                        detail.getPrice()))
+        List<PaymentCompletedEvent.SeatInfo> seatInfos = seats.stream()
+                .map(seat -> new PaymentCompletedEvent.SeatInfo(
+                        seat.getId(),
+                        seat.getVenueSeatId().intValue(),
+                        seat.getPrice()))
                 .toList();
 
         eventPublisher.publishEvent(PaymentCompletedEvent.of(
@@ -113,7 +113,7 @@ public class PaymentService {
 
     /**
      * 좌석 캐시 무효화
-     * 
+     *
      * @param scheduleId 스케줄 ID
      */
     private void evictSeatCache(Long scheduleId) {
